@@ -111,7 +111,7 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 .who{font:10px/1.7 var(--mono);color:var(--quiet);margin-top:12px;border-top:1px solid var(--line);padding-top:8px}.who b{color:var(--orange);font-weight:500;letter-spacing:.5px}.who.live{margin:0 0 14px;padding:8px 10px;border:1px solid var(--line);border-left:2px solid var(--orange);background:#101010;color:var(--soft)}
 .message-role small{display:block;margin-top:4px;font:9px/1.4 var(--mono);color:var(--quiet);text-transform:none;word-break:break-all}
 .live-text{font:11px/1.5 var(--mono);color:var(--soft);border-left:2px solid var(--ac,var(--orange));padding:4px 9px;margin:8px 0 2px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:96px;overflow:hidden;background:#0c0c0c}
-.agent-card.wide{grid-column:1/-1;order:99}.blk.narr{color:var(--quiet);font-size:12px;line-height:1.6;border-left:2px solid var(--line);padding-left:10px;margin:0 0 8px}
+.agent-card.wide{grid-column:1/-1;order:99}.blk.fold>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline}.blk.fold>summary::-webkit-details-marker{display:none}.blk.fold>summary::before{content:'▸';color:var(--orange);font-size:11px}.blk.fold[open]>summary::before{content:'▾'}.blk.fold>summary .pv{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.blk.fold[open]>summary .pv{display:none}.blk.fold>summary:hover .pv{color:var(--soft)}.blk.fold .fold-body{margin-top:6px}.blk.narr{color:var(--quiet);font-size:12px;line-height:1.6;border-left:2px solid var(--line);padding-left:10px;margin:0 0 8px}
 .content{transition:width .25s}.content.wide{width:100%}
 .agent-grid{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(220px,1fr);overflow-x:auto;padding-bottom:6px;margin-left:-96px;width:calc(100% + 96px)}
 @media(min-width:851px){.message-content>.agent-grid:first-child{margin-top:68px}}
@@ -438,7 +438,12 @@ function agentCard(b){
   return card;
 }
 function renderBlock(b,m){
-  if(b.t==='text'){const d=el('div','blk'+(b.narr?' narr':''));richText(d,b.text);return d}
+  if(b.t==='text'){
+    const flat=String(b.text||'').replace(/```[\s\S]*?```/g,' [code] ').replace(/[*`]|^#+\s*|\]\([^)]*\)/gm,'').replace(/\[/g,'').replace(/\s+/g,' ').trim();
+    if(b.narr&&(flat.length>140||String(b.text).includes('\n\n'))){   // commentaire intermédiaire (avant un outil) : replié sur une ligne, clic pour tout lire
+      const d=el('details','blk narr fold');d.open=!!b.unfold;d.ontoggle=()=>{b.unfold=d.open};
+      const sm=el('summary');sm.append(el('span','pv',flat.length>130?flat.slice(0,130).replace(/\s\S*$/,'')+'…':flat));d.append(sm);const body=el('div','fold-body');richText(body,b.text);d.append(body);return d}
+    const d=el('div','blk'+(b.narr?' narr':''));richText(d,b.text);return d}
   if(b.t==='notice'){const n=el('div','notice'+(b.level==='warn'?' warn':''),b.text);
     if(/^Budget d.étapes atteint/.test(b.text)){const go=el('button','choice','CONTINUER ↗');go.type='button';go.style.marginLeft='12px';go.disabled=busy;go.title='Reprend avec un nouveau budget d’étapes';go.onclick=()=>{if(!busy){prompt.value='continue';submit()}};n.append(go)}
     return n}
