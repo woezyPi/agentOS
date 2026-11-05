@@ -142,6 +142,12 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 .agent-card .live-text .code{margin:6px 0;font-size:11px}.agent-card .live-text .cp,.agent-card .live-text .lang{display:none}
 .agent-card .live-text .md-h{font-weight:600;color:var(--text)}
 .agent-card .more{padding-left:12px}
+.agent-card .ac-head{cursor:pointer;user-select:none}
+.agent-card .ac-tg{background:transparent;border:0;color:var(--ac);font:14px/1 var(--mono);padding:0 2px;cursor:pointer;width:16px}
+.agent-card .ac-head:hover .ac-tg{color:var(--text)}
+.agent-card .ac-peek{font:12px/1.5 var(--mono);color:var(--quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:10px;border-left:2px solid var(--line)}
+.agent-card>header{margin-bottom:8px}
+
 .agent-card{overflow:hidden}
 .agent-card .steps{grid-template-columns:minmax(0,1fr)}
 .agent-card .step{min-width:0}
@@ -228,7 +234,7 @@ function tickText(){if(!busy||!runStart)return '';const t=Math.floor((Date.now()
 setInterval(()=>{if(busy)document.querySelectorAll('.status-time').forEach(e=>e.textContent=tickText())},500);
 function closeMenu(){app.classList.remove('menu-open')}
 function start(){ctxInfo=null;const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
-function select(id){if(busy||!state.conversations.some(c=>c.id===id))return;state.active=id;save();render();closeMenu();syncPending();refreshCtx()}
+function select(id){if(busy||!state.conversations.some(c=>c.id===id))return;state.active=id;stickNext=true;save();render();closeMenu();syncPending();refreshCtx()}
 function remove(id){if(busy)return;const c=state.conversations.find(c=>c.id===id);if(!c||!confirm('Supprimer cette conversation (et son historique côté serveur) ?'))return;api('/api/threads/'+encodeURIComponent(id),{method:'DELETE'}).catch(()=>{});state.conversations=state.conversations.filter(c=>c.id!==id);if(state.active===id)state.active=state.conversations[0]?.id??null;if(!state.active){start();return}save();render()}
 
 // --- rendu riche : tout passe par le DOM / textContent (aucun innerHTML sur du contenu venant d'un modèle) ---
@@ -286,13 +292,14 @@ const fmtDur=ms=>ms<1000?'<1 s':ms<60000?Math.round(ms/1000)+' s':Math.floor(ms/
 function agentCard(b){
   const run=b.status==='run',st=run?'run':b.status==='error'?'err':'ok',steps=b.steps||[];
   const card=el('section','agent-card '+st);card.style.setProperty('--ac',AGENT_COLORS[b.agent]||'#c7fb5b');
-  const head=el('header');head.append(el('span','dot'),el('b','',label(b.agent)+(b.label?' · '+b.label:'')+(b.panel?' · PANEL':'')));if(b.panel)card.classList.add('wide');
+  const head=el('header');const tg=el('button','ac-tg',b.expanded?'▾':'▸');tg.type='button';tg.title=b.expanded?'Masquer les détails':'Afficher les détails';tg.setAttribute('aria-expanded',b.expanded?'true':'false');head.append(tg,el('span','dot'),el('b','',label(b.agent)+(b.label?' · '+b.label:'')+(b.panel?' · PANEL':'')));if(b.panel)card.classList.add('wide');
   if(b.model&&!b.panel)head.append(el('span','pill model',b.model));
   const nTools=steps.filter(x=>x.k==='tool').length;
   head.append(el('span','pill',(run?'EN COURS':st==='err'?'ÉCHEC':'TERMINÉ')+(nTools?' · '+nTools+' outil'+(nTools>1?'s':''):'')));
   if(b.start)head.append(el('span','dur',fmtDur((b.end||Date.now())-b.start)));
   card.append(head);
   if(b.summary){const tk=cleanTask(b.summary);if(tk){const d=el('div','task',tk);d.title=tk;card.append(d)}}
+  const det=el('div','ac-det');
   if(steps.length){
     const shown=run?steps.slice(-8):steps,list=el('ol','steps');
     if(run&&steps.length>shown.length)list.append(el('li','more','… '+(steps.length-shown.length)+' étape(s) précédente(s)'));
@@ -301,10 +308,14 @@ function agentCard(b){
       const li=el('li','step '+(x.status||'run'));const ss=el('span','s-sum');ss.title=x.summary||'';ss.append(stepSum(x.summary||''));li.append(el('span','s-name',x.name),ss,el('span','s-st',x.status==='ok'?'✓':x.status==='error'?'✗':'…'));
       if(x.status==='error'&&x.text)li.append(el('div','s-err',x.text));
       list.append(li)}
-    card.append(list);
-  }else if(run)card.append(el('div','thinking','Réflexion…'));
-  if(run&&b.live){const lt=el('div','live-text'),inner=el('div');richText(inner,b.live);lt.append(inner);card.append(lt)}
-  if(b.result){const d=el('details','report');d.open=b.open??true;d.ontoggle=()=>{b.open=d.open};d.append(el('summary','','RAPPORT'));const body=el('div','agent-body');const nm=/^\[Rapport du sous-agent[^\]\n]*\]\s*\n/.exec(b.result);if(nm)body.append(el('div','agent-note',nm[0].trim().replace(/^\[|\]$/g,'')));richText(body,nm?b.result.slice(nm[0].length):b.result);d.append(body);card.append(d)}
+    det.append(list);
+  }else if(run)det.append(el('div','thinking','Réflexion…'));
+  if(run&&b.live){const lt=el('div','live-text'),inner=el('div');richText(inner,b.live);lt.append(inner);det.append(lt)}
+  if(b.result){const d=el('details','report');d.open=b.open??true;d.ontoggle=()=>{b.open=d.open};d.append(el('summary','','RAPPORT'));const body=el('div','agent-body');const nm=/^\[Rapport du sous-agent[^\]\n]*\]\s*\n/.exec(b.result);if(nm)body.append(el('div','agent-note',nm[0].trim().replace(/^\[|\]$/g,'')));richText(body,nm?b.result.slice(nm[0].length):b.result);d.append(body);det.append(d)}
+  if(b.expanded)card.append(det);
+  else if(run){const last=[...steps].reverse().find(x=>x.k==='tool');card.append(el('div','ac-peek',last?last.name+' '+(last.summary||''):'Réflexion…'))}
+  const flip=()=>{b.expanded=!b.expanded;schedule()};
+  head.classList.add('ac-head');head.onclick=e=>{if(e.target.closest('a,.fp'))return;flip()};
   return card;
 }
 function renderBlock(b,m){
@@ -404,9 +415,12 @@ function renderMessage(m){
   art.append(content);return art;
 }
 function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=el('div','thread'+(c.id===state.active?' active':''));const open=el('button','thread-title',c.title);open.style.cssText='flex:1;text-align:left;border:0;color:inherit;background:transparent;padding:0;cursor:pointer;font:inherit';open.title=c.title;open.onclick=()=>select(c.id);const del=el('button','delete-thread','×');del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);row.append(open,del);threads.append(row)}}
+let stickNext=false;
 function render(){
   const c=current();renderThreads();$('conversationTitle').textContent=c?.title?.toUpperCase()||'NOUVELLE CONVERSATION';
-  const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<80;
+  // on ne suit le bas que si on y était déjà : sinon on garde la position de lecture (l'utilisateur peut remonter pendant la génération)
+  const prevTop=feed.scrollTop,follow=stickNext||feed.scrollHeight-feed.scrollTop-feed.clientHeight<80;stickNext=false;
+  const inner=[...feed.querySelectorAll('.agent-grid,.agent-body,.tool pre.result,.sbs-wrap')].map(e=>[e.scrollLeft,e.scrollTop]);
   let oldTurns=0;if(c&&ctxInfo&&ctxInfo.summary_chars>0&&ctxInfo.turns>0){oldTurns=Math.max(0,c.messages.filter(x=>x.role==='user').length-ctxInfo.turns)}
   {let u=0;for(const x of (c?c.messages:[])){if(x.role==='user')u++;x._old=u>0&&u<=oldTurns}}
   feed.replaceChildren();
@@ -417,7 +431,8 @@ function render(){
     feed.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{prompt.value=b.dataset.prompt;agent.value=b.dataset.agent;savePrefs();prompt.focus()}));return}
   const wrap=el('div','conversation');for(const m of c.messages)wrap.append(renderMessage(m));feed.append(wrap);
   linkifyPaths(feed);
-  if(nearBottom||busy)feed.scrollTop=feed.scrollHeight;
+  feed.querySelectorAll('.agent-grid,.agent-body,.tool pre.result,.sbs-wrap').forEach((e,i)=>{if(inner[i]){e.scrollLeft=inner[i][0];e.scrollTop=inner[i][1]}});
+  feed.scrollTop=follow?feed.scrollHeight:prevTop;
 }
 function schedule(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;render()})}
 
@@ -479,11 +494,11 @@ function submit(){
   if(c.messages.length===0)c.title=value.replace(/\s+/g,' ').slice(0,45)+(value.length>45?'…':'');
   c.messages.push({id:makeId(),role:'user',text:value});
   const m={id:makeId(),role:'assistant',agent:agent.value==='auto'?'Superviseur':label(agent.value),blocks:[],status:'Réflexion…'};c.messages.push(m);
-  prompt.value='';save();run('/api/chat',body(c,{message:value}),m);
+  prompt.value='';stickNext=true;save();run('/api/chat',body(c,{message:value}),m);
 }
 function resume(m,b){
   if(busy)return;const c=current();b.resolved=true;b.decided={...b.choices};save();
-  m.status='Reprise…';run('/api/resume',body(c,{decisions:b.choices}),m);
+  m.status='Reprise…';stickNext=true;run('/api/resume',body(c,{decisions:b.choices}),m);
 }
 // AUTO coché alors qu'une confirmation est affichée : on la réévalue (elle peut disparaître ou se réduire).
 async function reevaluate(){
