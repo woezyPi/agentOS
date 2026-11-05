@@ -154,7 +154,7 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 @keyframes wnod{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 @keyframes wground{to{stroke-dashoffset:-14}}
 @media (prefers-reduced-motion:reduce){.walker .ground,.walker .leg,.walker .bodyg,.walker .headg{animation:none}}
-.approval.auto{border-color:#4d7a1e;background:#0d140a;opacity:1}.approval.auto h4{color:var(--lime)}
+.approval.auto{border-color:#4d7a1e;background:#0d140a;opacity:1;padding:8px 12px}.approval.auto .call{margin:0}.approval.auto h4{color:var(--lime)}
 .message.compacted{opacity:.5}.message.compacted .message-role small{color:var(--orange)}
 </style>
 </head>
@@ -310,8 +310,8 @@ function renderBlock(b,m){
     if(b.agent)return agentCard(b);
     const d=el('details','tool '+(b.status==='error'?'err':b.status==='ok'?'ok':''));d.open=!!b.open;d.ontoggle=()=>{b.open=d.open};const s=el('summary');s.append(el('span','t-name','⚙ '+b.name),el('span','t-sum',b.summary||''),el('span','',run?'…':b.status==='error'?'✖':'✔'));d.append(s);if(b.result){const p=el('pre','result',b.result+(b.truncated?'\n… [tronqué]':''));d.append(p)}return d}
   if(b.t==='approval'){
-    const d=el('div','approval'+(b.resolved?' resolved':'')+(b.auto?' auto':''));d.append(el('h4','',b.auto?'⚡ MODIFICATION AUTO-APPROUVÉE (mode auto) — voici ce qui a changé':(b.resolved?'CONFIRMATION — TRAITÉE':'CONFIRMATION REQUISE')));
-    for(const c of b.calls){const w=el('div','call');w.append(el('div','call-title',c.preview?.title||c.name));if(c.reason)w.append(el('div','reason',(b.resolved?'⚡ AUTO : confirmation était requise — ':'⚡ AUTO : confirmation requise — ')+c.reason));if(c.preview)w.append(pvBody(c.preview.kind,c.preview.body));
+    const d=el('div','approval'+(b.resolved?' resolved':'')+(b.auto?' auto':''));if(!b.auto)d.append(el('h4','',b.resolved?'CONFIRMATION — TRAITÉE':'CONFIRMATION REQUISE'));
+    for(const c of b.calls){const w=el('div','call');w.append(el('div','call-title',(b.auto?'⚡ ':'')+(c.preview?.title||c.name)));if(c.reason)w.append(el('div','reason',(b.resolved?'⚡ AUTO : confirmation était requise — ':'⚡ AUTO : confirmation requise — ')+c.reason));if(c.preview)w.append(pvBody(c.preview.kind,c.preview.body));
       if(b.auto){d.append(w);continue}
       const ch=el('div','choices');const cur=(b.resolved?b.decided:b.choices)?.[c.id];
       for(const [v,t,cls] of [['approve','AUTORISER','ok'],['deny','REFUSER',''],['always','TOUJOURS','ok']]){const bt=el('button','choice'+(cur===v?' sel '+cls:''),t);bt.type='button';bt.disabled=!!b.resolved||busy;bt.title=v==='always'?(c.name==='execute_bash'?'Commande sûre : toutes les commandes de la liste blanche passent ensuite sans question. Sinon : cette commande exacte seulement.':'Ne plus demander pour ce fichier (jusqu’à la fin de la session)'):'';bt.onclick=()=>{b.choices[c.id]=v;schedule()};ch.append(bt)}
