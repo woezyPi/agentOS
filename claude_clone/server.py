@@ -205,7 +205,7 @@ def node_events(node: str, update: dict | None, streamed_text: bool, model_of=No
             out.append({"type": "ai", "text": as_text(msg.content).strip(), "streamed": streamed_text})
             for tc in msg.tool_calls:
                 agent = tc["args"].get("role") if tc["name"] == T.ASK_AGENT_TOOL_NAME else ("researcher" if tc["name"] == T.RESEARCH_TOOL_NAME else ("worker" if tc["name"] == T.WORKERS_TOOL_NAME else None))
-                out.append({"type": "tool_call", "id": tc["id"], "name": tc["name"], "summary": _short(tc["args"]), "agent": agent, "panel": bool(tc["args"].get("panel")),
+                out.append({"type": "tool_call", "id": tc["id"], "name": tc["name"], "summary": (" ".join(str(tc["args"].get("task") or "").split())[:300] or _short(tc["args"])) if tc["name"] == T.ASK_AGENT_TOOL_NAME else _short(tc["args"]), "agent": agent, "panel": bool(tc["args"].get("panel")),
                         "model": model_of(agent, bool(tc["args"].get("panel"))) if (model_of and agent) else None})
         elif isinstance(msg, ToolMessage):
             role = msg.additional_kwargs.get("role") or ("coder" if node == "coder" else None)

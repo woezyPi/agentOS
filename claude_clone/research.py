@@ -49,8 +49,8 @@ def emit_step(**ev) -> None:
         pass
 
 
-def _brief(args, n: int = 120) -> str:
-    text = ", ".join(f"{k}={str(v)[:60]}" for k, v in (args or {}).items()) if isinstance(args, dict) else str(args)
+def _brief(args, n: int = 200) -> str:
+    text = ", ".join(f"{k}={str(v)[:120]}" for k, v in (args or {}).items()) if isinstance(args, dict) else str(args)
     return text if len(text) <= n else text[: n - 1] + "…"
 
 

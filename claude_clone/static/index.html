@@ -101,7 +101,7 @@ table.sbs td.del{background:#2a1218;color:#ff9db7}table.sbs td.add{background:#1
 table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3px 10px;font-size:10px}
 
 .moulinette{display:inline-flex;gap:3px;vertical-align:middle;margin-right:9px}.moulinette i{width:6px;height:6px;background:var(--orange);animation:mou 1s infinite ease-in-out}.moulinette i:nth-child(2){background:var(--pink);animation-delay:.15s}.moulinette i:nth-child(3){animation-delay:.3s}.moulinette i:nth-child(4){background:var(--pink);animation-delay:.45s}
-@keyframes mou{0%,100%{transform:scale(.45);opacity:.3}50%{transform:scale(1.3);opacity:1}}.status-time{color:var(--quiet);margin-left:4px}
+@keyframes mou{0%,100%{transform:scale(.45);opacity:.3}50%{transform:scale(1.3);opacity:1}}.status-time{color:var(--quiet);margin-left:8px}
 @media (prefers-reduced-motion:reduce){.moulinette i{animation:none}}
 
 .agent-card .pill.model{color:var(--text);border-color:var(--line);background:#161616;text-transform:none}
@@ -113,7 +113,7 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 .live-text{font:11px/1.5 var(--mono);color:var(--soft);border-left:2px solid var(--ac,var(--orange));padding:4px 9px;margin:8px 0 2px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:96px;overflow:hidden;background:#0c0c0c}
 .agent-card.wide{grid-column:1/-1;order:99}.blk.narr{color:var(--quiet);font-size:12px;line-height:1.6;border-left:2px solid var(--line);padding-left:10px;margin:0 0 8px}
 .content{transition:width .25s}.content.wide{width:min(100%,1500px)}
-.agent-grid{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(150px,1fr);overflow-x:auto;padding-bottom:6px;margin-left:-96px;width:calc(100% + 96px)}
+.agent-grid{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(150px,1fr);overflow-x:auto;padding-bottom:6px}
 .agent-grid:has(.agent-card:nth-child(4)) .agent-card{font-size:11px}.agent-grid:has(.agent-card:nth-child(4)) .agent-card header .pill.model{display:none}.agent-grid:has(.agent-card:nth-child(4)) .agent-card .task{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .agent-card.wide{grid-column:auto;order:99}
 @media(max-width:850px){.agent-grid{margin-left:0;width:auto;grid-auto-flow:row;grid-auto-columns:auto;grid-template-columns:1fr;overflow-x:visible}}
@@ -126,6 +126,34 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 #fvBody{flex:1;overflow:auto;font:12px/1.6 var(--mono)}.fv-row{display:grid;grid-template-columns:56px minmax(0,1fr)}.fv-row i{font-style:normal;text-align:right;padding:0 10px 0 0;color:var(--quiet);user-select:none;background:#0e0e0e}.fv-row span{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 12px}.fv-row.hit{background:#2a1d08;box-shadow:inset 2px 0 var(--orange)}.fv-row.hit i{color:var(--orange)}
 .fv-note{font:11px/1.6 var(--mono);color:var(--soft);padding:14px}.fv-note button{display:block;margin:6px 0;background:transparent;border:1px solid var(--line);color:var(--text);padding:7px 10px;font:11px var(--mono);cursor:pointer}.fv-note button:hover{border-color:var(--orange)}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#1a1a1a;border:1px solid var(--pink);color:var(--text);font:11px var(--mono);padding:9px 14px;z-index:30;max-width:90vw}
+.status-phase{margin-right:2px}
+/* carte sous-agent : tâche lisible, étapes sur une ligne, texte en direct rendu */
+.agent-card .task{font:13px/1.55 var(--sans);color:var(--soft);border-left:2px solid var(--ac);padding:1px 0 1px 10px;margin:2px 0 12px;-webkit-line-clamp:3}
+.agent-card .step{flex-wrap:nowrap}
+.agent-card .s-name{flex:none}
+.agent-card .s-sum{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-card .s-sum .k{color:#6a6a6a}.agent-card .s-sum .v{color:var(--soft)}
+.agent-card .s-st{flex:none}
+.agent-card .step .fp{text-decoration:none;cursor:inherit}
+.agent-card .step.run .s-st{animation:pulse 1.1s ease-in-out infinite}
+.agent-card .live-text{font:13px/1.6 var(--sans);color:var(--soft);max-height:130px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:6px 10px;margin:10px 0 2px;border-left:2px solid var(--ac);background:linear-gradient(90deg,#101010,#0a0a0a);-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 38%);mask-image:linear-gradient(to bottom,transparent 0,#000 38%)}
+.agent-card .live-text>div{white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-card .live-text .code{margin:6px 0;font-size:11px}.agent-card .live-text .cp,.agent-card .live-text .lang{display:none}
+.agent-card .live-text .md-h{font-weight:600;color:var(--text)}
+.agent-card .more{padding-left:12px}
+.agent-card .agent-note{font:11px/1.5 var(--mono);color:#6a6a6a;margin:0 0 8px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
+
+
+/* Loader : le logo redessiné en vectoriel, qui MARCHE SUR PLACE (pattes en alternance, corps qui rebondit, tête qui balance, sol qui défile) */
+.walker{display:inline-block;width:26px;height:28px;vertical-align:middle;margin-right:10px}.walker svg{width:100%;height:100%;overflow:visible;display:block}
+.walker .c1{fill:var(--lime)}.walker .c2{fill:var(--pink)}.walker .eye{fill:var(--bg)}.walker .ground{stroke:#3a3a3a;stroke-width:3;stroke-dasharray:7 7;animation:wground .8s linear infinite}
+.walker .leg{transform-box:fill-box;transform-origin:50% 0;animation:wstep .8s infinite ease-in-out}.walker .leg.b{animation-delay:-.4s}
+.walker .bodyg{animation:wbob .4s infinite ease-in-out alternate}.walker .headg{transform-box:fill-box;transform-origin:0 100%;animation:wnod .8s infinite ease-in-out}
+@keyframes wstep{0%,100%{transform:translateY(0) rotate(-16deg)}50%{transform:translateY(-4px) rotate(16deg)}}
+@keyframes wbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
+@keyframes wnod{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
+@keyframes wground{to{stroke-dashoffset:-14}}
+@media (prefers-reduced-motion:reduce){.walker .ground,.walker .leg,.walker .bodyg,.walker .headg{animation:none}}
 </style>
 </head>
 <body>
@@ -186,7 +214,7 @@ let roleTitles={coder:'AGENT CODEUR'};
 const label=k=>(roleTitles[k]||String(k||'AGENT')).toUpperCase();
 
 let supModel='',busy=false,controller=null,raf=0,runStart=0,lastEvent=0;
-function tickText(){if(!busy||!runStart)return '';const t=Math.floor((Date.now()-runStart)/1000),q=Math.floor((Date.now()-lastEvent)/1000);return t+' s'+(q>=6?' · '+q+' s sans signal':'')}
+function tickText(){if(!busy||!runStart)return '';const t=Math.floor((Date.now()-runStart)/1000),q=Math.floor((Date.now()-lastEvent)/1000);return t+' s'+(q>=6&&t-q>=2?' · '+q+' s sans signal':'')}
 setInterval(()=>{if(busy)document.querySelectorAll('.status-time').forEach(e=>e.textContent=tickText())},500);
 function closeMenu(){app.classList.remove('menu-open')}
 function start(){const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
@@ -240,6 +268,10 @@ function pvBody(kind,body){
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
 
 const AGENT_COLORS={architect:'#ff5eac',developer:'#c7fb5b',challenger:'#ffa648',reviewer:'#ff6b6b',devops:'#5aa9ff',data:'#4dd8e6',writer:'#e8e8e8',researcher:'#f5d547',coder:'#c7fb5b',worker:'#9aa4ff'};
+const cleanTask=t=>{t=String(t||'');const m=/^role=[^,]*,\s*task=([\s\S]*?)(?:,\s*context=[\s\S]*)?$/.exec(t);return (m?m[1]:t).replace(/⏎/g,' ').replace(/\s+/g,' ').trim()};
+function stepSum(sum){const f=document.createDocumentFragment(),re=/(?:^|, )([A-Za-z_]\w*)=/g;const hits=[];let m;while((m=re.exec(sum))){hits.push({k:m[1],at:m.index,vs:m.index+m[0].length})}
+  if(!hits.length){f.append(sum);return f}
+  hits.forEach((h,i)=>{const end=i+1<hits.length?hits[i+1].at:sum.length;if(i)f.append(' ');f.append(el('span','k',h.k+' '),el('span','v',sum.slice(h.vs,end)))});return f}
 const fmtDur=ms=>ms<1000?'<1 s':ms<60000?Math.round(ms/1000)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
 function agentCard(b){
   const run=b.status==='run',st=run?'run':b.status==='error'?'err':'ok',steps=b.steps||[];
@@ -250,19 +282,19 @@ function agentCard(b){
   head.append(el('span','pill',(run?'EN COURS':st==='err'?'ÉCHEC':'TERMINÉ')+(nTools?' · '+nTools+' outil'+(nTools>1?'s':''):'')));
   if(b.start)head.append(el('span','dur',fmtDur((b.end||Date.now())-b.start)));
   card.append(head);
-  if(b.summary)card.append(el('div','task',b.summary));
+  if(b.summary){const tk=cleanTask(b.summary);if(tk){const d=el('div','task',tk);d.title=tk;card.append(d)}}
   if(steps.length){
     const shown=run?steps.slice(-8):steps,list=el('ol','steps');
     if(run&&steps.length>shown.length)list.append(el('li','more','… '+(steps.length-shown.length)+' étape(s) précédente(s)'));
     for(const x of shown){
       if(x.k==='thought'){list.append(el('li','thought',x.text));continue}
-      const li=el('li','step '+(x.status||'run'));li.append(el('span','s-name',x.name),el('span','s-sum',x.summary||''),el('span','s-st',x.status==='ok'?'✓':x.status==='error'?'✗':'…'));
+      const li=el('li','step '+(x.status||'run'));const ss=el('span','s-sum');ss.title=x.summary||'';ss.append(stepSum(x.summary||''));li.append(el('span','s-name',x.name),ss,el('span','s-st',x.status==='ok'?'✓':x.status==='error'?'✗':'…'));
       if(x.status==='error'&&x.text)li.append(el('div','s-err',x.text));
       list.append(li)}
     card.append(list);
   }else if(run)card.append(el('div','thinking','Réflexion…'));
-  if(run&&b.live)card.append(el('div','live-text',b.live));
-  if(b.result){const d=el('details','report');d.open=b.open??true;d.ontoggle=()=>{b.open=d.open};d.append(el('summary','','RAPPORT'));const body=el('div','agent-body');richText(body,b.result);d.append(body);card.append(d)}
+  if(run&&b.live){const lt=el('div','live-text'),inner=el('div');richText(inner,b.live);lt.append(inner);card.append(lt)}
+  if(b.result){const d=el('details','report');d.open=b.open??true;d.ontoggle=()=>{b.open=d.open};d.append(el('summary','','RAPPORT'));const body=el('div','agent-body');const nm=/^\[Rapport du sous-agent[^\]\n]*\]\s*\n/.exec(b.result);if(nm)body.append(el('div','agent-note',nm[0].trim().replace(/^\[|\]$/g,'')));richText(body,nm?b.result.slice(nm[0].length):b.result);d.append(body);card.append(d)}
   return card;
 }
 function renderBlock(b,m){
@@ -317,7 +349,16 @@ document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest
 document.addEventListener('keydown',e=>{if(e.key==='Control'||e.key==='Meta')document.body.classList.add('ctrl');if(e.key==='Escape'&&!fileview.hidden)closeFile()});
 document.addEventListener('keyup',e=>{if(e.key==='Control'||e.key==='Meta')document.body.classList.remove('ctrl')});window.addEventListener('blur',()=>document.body.classList.remove('ctrl'));
 $('fvClose').onclick=closeFile;$('fvCopy').onclick=async()=>{try{await navigator.clipboard.writeText(fvPath);toast('Chemin copié')}catch{toast('Copie impossible')}};
+const WALKER_SVG='<svg viewBox="-4 0 108 122" aria-hidden="true"><line class="ground" x1="-4" y1="117" x2="104" y2="117" fill="none"/><g class="bodyg"><g class="headg"><polygon class="c1" points="70,38 78,38.5 78.5,25.5 71.5,25"/><polygon class="c2" points="75,2.5 99,5 96.5,26.5 73.5,24"/></g><polygon class="c1" points="0,55 80,36 84,83 0,88"/><rect class="eye" x="57" y="49" width="15" height="16" transform="rotate(-6 64 57)"/><rect class="leg a c1" x="1" y="84" width="19" height="29"/><rect class="leg b c1" x="40" y="82" width="16" height="31"/><rect class="leg a c1" x="72" y="80" width="16" height="25"/></g></svg>';
+function walker(){const w=el('span','moulinette walker');w.innerHTML=WALKER_SVG;return w}   // SVG statique et de confiance : aucun contenu venant d'un modèle
+function phaseOf(m){
+  const tools=m.blocks.filter(b=>b.t==='tool'&&b.name!=='update_plan'),last=m.blocks[m.blocks.length-1];
+  if(tools.some(b=>b.agent&&b.status==='run'))return 'agents au travail…';
+  if(tools.some(b=>!b.agent&&b.status==='run'))return 'outil en cours…';
+  if(last&&last.t==='text'&&last.open)return 'rédige…';
+  return /^Reprise/.test(m.status||'')?'reprise…':'réfléchit…'}
 function whoLine(m,live){
+  if(live)return null;
   const tools=m.blocks.filter(b=>b.t==='tool'&&b.name!=='update_plan'),direct=tools.filter(b=>!b.agent),agents=tools.filter(b=>b.agent);
   if(!live&&!tools.length)return null;
   const cnt={};for(const b of direct)cnt[b.name]=(cnt[b.name]||0)+1;
@@ -330,14 +371,15 @@ function whoLine(m,live){
     else if(direct.some(b=>b.status==='run'))phase='exécute un outil…';
     else if(last&&last.t==='text'&&last.open)phase='rédige la réponse…';
     else phase='réfléchit…'}
-  const w=el('div','who'+(live?' live':''));
-  w.append(document.createTextNode([phase,direct.length?'outils : '+d:'',ag?'sous-agents : '+ag:(live?'':'aucun sous-agent (le superviseur a tout fait lui-même)')].filter(Boolean).join(' — ')));
+  if(agents.length)return null;
+  const w=el('div','who');
+  w.append(document.createTextNode([direct.length?'outils : '+d:'','aucun sous-agent : le superviseur a tout fait lui-même'].filter(Boolean).join(' — ')));
   return w}
 function renderMessage(m){
   const art=el('article','message '+(m.role==='user'?'user':'agent'));
   const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m.role!=='user'&&supModel&&/^SUPERVISEUR$/i.test(m.agent||'SUPERVISEUR'))rl.append(el('small','',supModel));art.append(rl);
   const content=el('div');const body=el('div','message-content');
-  if(m.role==='user'||!m.blocks){body.textContent=m.text||''}else{let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=el('span','moulinette');for(let i=0;i<4;i++)mo.append(document.createElement('i'));sl.append(mo,el('span','status-time',tickText()));body.append(sl)}}
+  if(m.role==='user'||!m.blocks){body.textContent=m.text||''}else{let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));body.append(sl)}}
   content.append(body);
   if(m.role!=='user'&&m.blocks){const cv=current(),live=busy&&cv&&cv.messages[cv.messages.length-1]===m,w=whoLine(m,live);if(w){if(live)content.prepend(w);else content.append(w)}}
   if(m.role!=='user'&&m.usage)content.append(el('div','usage',m.usage));
