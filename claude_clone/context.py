@@ -22,11 +22,12 @@ def fmt_tokens(n: int | None) -> str:
 
 def context_info(values: dict, settings=None) -> dict:
     msgs, summary = values.get("messages", []), values.get("summary", "") or ""
+    turns = sum(1 for m in msgs if m.type == "human" and not str(m.content).startswith("[système]"))  # demandes encore dans le contexte du modèle
     tokens = count_tokens_approximately(msgs) + (len(summary) // 3) + SYSTEM_OVERHEAD
     window = CONTEXT_WINDOWS.get(getattr(settings, "supervisor_model", ""))
     return {
         "tokens": tokens, "window": window, "compact_at": config.CONTEXT_COMPACT_TOKENS, "keep": config.CONTEXT_KEEP_TOKENS,
-        "messages": len(msgs), "summary_chars": len(summary),
+        "messages": len(msgs), "turns": turns, "summary_chars": len(summary),
         "pct_window": round(100 * tokens / window) if window else None,
         "pct_compact": round(100 * tokens / config.CONTEXT_COMPACT_TOKENS),
     }

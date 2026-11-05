@@ -199,6 +199,8 @@ async def decide(session: PromptSession, calls: list[dict], values: dict, allow:
             label = "⚡ auto" if auto else "✓ session"
             if ok:
                 console.print(Text(f"{label} : {tc['name']}({_short_args(tc['args'], 70)}) — {why}", style="green"))
+                if tc["name"] in ("write_file", "edit_file"):
+                    render_pending_call(tc, values.get("coder_blocks", []), values)  # le diff reste visible même sans confirmation
                 if tc["name"] == "execute_bash":
                     offline.append(tc["id"])
                 continue

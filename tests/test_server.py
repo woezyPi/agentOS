@@ -317,9 +317,57 @@ def test_file_view():
     print("✓ visionneur de fichier : périmètre, sensibles refusés, binaire, symlink, tronqué, nom seul unique / ambigu, authentifié")
 
 
+def test_auto_diff_editor_and_turns():
+    import claude_clone.server as SV
+    os.makedirs("src", exist_ok=True); open("src/api.py", "w").write("alpha\nbeta\n"); open(".env", "w").write("S=1\n")
+    os.makedirs("a", exist_ok=True); os.makedirs("b", exist_ok=True); open("a/dup.py", "w").write("x"); open("b/dup.py", "w").write("y")
+    # --- mode auto : le DIFF part avec l'événement, calculé AVANT que le fichier change
+    sup = FakeLLM([call("edit_file", {"path": "src/api.py", "old": "alpha", "new": "ALPHA"}, "e1"), AIMessage(content="fait")])
+    c = TestClient(create_app(token=TOKEN, hosts={"testserver"}, graph=build_graph(supervisor_llm=sup, coder_llm=FakeLLM([]))), base_url="http://testserver")
+    ev = ndjson(c, "/api/chat", json={"thread_id": tid(20), "message": "édite", "auto": True})
+    au = next(e for e in ev if e["type"] == "auto")
+    assert au["id"] == "e1" and au["preview"]["kind"] == "diff" and "-alpha" in au["preview"]["body"] and "+ALPHA" in au["preview"]["body"]
+    assert "approval" not in kinds(ev) and open("src/api.py").read() == "ALPHA\nbeta\n", "appliqué sans confirmation, MAIS avec son diff"
+    sup = FakeLLM([call("execute_bash", {"command": "ls"}, "b1"), AIMessage(content="ok")])
+    c2 = TestClient(create_app(token=TOKEN, hosts={"testserver"}, graph=build_graph(supervisor_llm=sup, coder_llm=FakeLLM([]))), base_url="http://testserver")
+    assert next(e for e in ndjson(c2, "/api/chat", json={"thread_id": tid(21), "message": "x", "auto": True}) if e["type"] == "auto")["preview"] is None, "pas de carte pour un simple ls"
+    # --- ouverture dans l'éditeur : par le SERVEUR, argv fixe, même périmètre que le visionneur
+    calls, real_which, real_popen = [], SV.shutil.which, SV.subprocess.Popen
+    class FakePopen:
+        def __init__(self, argv, **kw): calls.append((argv, kw))
+    SV.shutil.which, SV.subprocess.Popen = (lambda n: "/fake/" + n), FakePopen
+    try:
+        post = lambda **b: c.post("/api/open-editor", json=b, headers=H)
+        r = post(path="src/api.py", line=3); assert r.status_code == 200 and r.json()["ok"] and r.json()["file"] == "src/api.py"
+        argv, kw = calls[-1]; assert argv == ["/fake/code", "--goto", os.path.join(os.getcwd(), "src/api.py") + ":3"] and kw["start_new_session"] is True and "shell" not in kw
+        assert not any(k for k in kw["env"] if any(w in k.upper() for w in ("KEY", "TOKEN", "SECRET"))), "aucun secret transmis à l'éditeur"
+        post(path="src/api.py"); assert calls[-1][0][-1].endswith("src/api.py"), "sans ligne : pas de « :0 »"
+        n = len(calls)
+        for bad, code in (({"path": "../x"}, 403), ({"path": "/etc/passwd"}, 403), ({"path": ".env"}, 403), ({"path": "src/nope.py"}, 404), ({"path": "dup.py"}, 409), ({"path": "-rf"}, 404), ({"path": ""}, 422), ({"path": "src/api.py", "line": -1}, 422)):
+            assert post(**bad).status_code == code, bad
+        assert len(calls) == n, "aucune commande lancée pour une requête refusée"
+        assert post(path="api.py").status_code == 200 and calls[-1][0][-1].endswith("src/api.py"), "nom seul unique retrouvé"
+        assert c.post("/api/open-editor", json={"path": "src/api.py"}).status_code == 401
+        os.environ["CC_EDITOR"] = "rm -rf"; assert post(path="src/api.py").status_code == 500 and len(calls) == n + 1, "CC_EDITOR : liste fermée, aucune commande lancée"
+        os.environ["CC_EDITOR"] = "cursor"; post(path="src/api.py"); assert calls[-1][0][0] == "/fake/cursor"; del os.environ["CC_EDITOR"]
+        SV.shutil.which = lambda n: None
+        r = post(path="src/api.py", line=2); assert r.status_code == 501 and r.json()["fallback"].startswith("vscode://") and r.json()["fallback"].endswith("src/api.py:2")
+    finally:
+        SV.shutil.which, SV.subprocess.Popen = real_which, real_popen
+        os.environ.pop("CC_EDITOR", None)
+    # --- tours encore dans le contexte (pour estomper les messages résumés)
+    sup = FakeLLM([AIMessage(content="a" * 3000), AIMessage(content="b" * 3000), AIMessage(content="RESUME")])
+    c3 = TestClient(create_app(token=TOKEN, hosts={"testserver"}, graph=build_graph(supervisor_llm=sup, coder_llm=FakeLLM([]))), base_url="http://testserver")
+    ndjson(c3, "/api/chat", json={"thread_id": tid(22), "message": "un"}); ndjson(c3, "/api/chat", json={"thread_id": tid(22), "message": "deux"})
+    assert c3.get(f"/api/threads/{tid(22)}/context", headers=H).json()["turns"] == 2
+    r = c3.post(f"/api/threads/{tid(22)}/compact", headers=H, json={}).json()["context"]
+    assert r["turns"] == 1 and r["summary_chars"] > 0, "après compactage : 1 demande gardée, le reste est dans le résumé"
+    print("✓ auto : diff avant exécution ; éditeur lancé par le serveur (argv fixe, périmètre, secrets, CC_EDITOR fermé, repli) ; tours du contexte")
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         d = os.path.realpath(d); os.chdir(d); T.set_workdir(d)
-        for t in (test_security, test_approval_flow, test_deny_flow, test_auto_and_always, test_agent_hint_and_events, test_token_file, test_context_and_compact, test_skills_api, test_registry_crud, test_panel_events, test_models_api_and_named_status, test_worker_cards_events, test_file_view):
+        for t in (test_security, test_approval_flow, test_deny_flow, test_auto_and_always, test_agent_hint_and_events, test_token_file, test_context_and_compact, test_skills_api, test_registry_crud, test_panel_events, test_models_api_and_named_status, test_worker_cards_events, test_file_view, test_auto_diff_editor_and_turns):
             t()
     print("\nTous les tests serveur passent.")

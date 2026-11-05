@@ -20,6 +20,8 @@ import json
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import time
 import webbrowser
 from contextlib import asynccontextmanager
@@ -99,6 +101,32 @@ class ModelsIn(BaseModel):
 
 class ModelsResetIn(BaseModel):
     keys: list[str] = Field(default_factory=list, max_length=20)
+
+
+class OpenIn(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    line: int = Field(default=0, ge=0, le=10_000_000)
+
+
+EDITORS = ("code", "code-insiders", "cursor", "codium")  # CC_EDITOR ne peut valoir que l'un d'eux (jamais une commande arbitraire)
+
+
+def _resolve_for_editor(path: str) -> str:
+    """Même périmètre que le visionneur : dossier de travail, jamais de fichier sensible ; un nom seul doit être unique."""
+    try:
+        real = T.safe_path(path)
+    except Exception:
+        raise HTTPException(403, "Chemin hors du dossier de travail")
+    if not os.path.isfile(real):
+        if "/" in path.strip("/"):
+            raise HTTPException(404, f"Fichier introuvable : {path}")
+        cands = _by_basename(os.path.basename(path))
+        if len(cands) != 1:
+            raise HTTPException(404 if not cands else 409, f"Fichier introuvable : {path}" if not cands else f"« {path} » existe à plusieurs endroits : donne le chemin complet.")
+        real = T.safe_path(cands[0])
+    if _protected(os.path.relpath(real, T.get_workdir())):
+        raise HTTPException(403, "Fichier sensible : non ouvert par l'interface")
+    return real
 
 
 class CompactIn(BaseModel):
@@ -292,7 +320,8 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
                 calls = snap.values["messages"][-1].tool_calls
                 auto_ok, offline, needs = triage(calls, snap.values, allow, auto)
                 for tc, why in auto_ok:
-                    yield enc({"type": "auto", "name": tc["name"], "summary": _short(tc["args"], 70), "why": why})
+                    yield enc({"type": "auto", "id": tc["id"], "name": tc["name"], "summary": _short(tc["args"], 70), "why": why,
+                               "preview": preview(tc, snap.values) if tc["name"] in ("write_file", "edit_file") else None})  # le diff, AVANT que le fichier change
                 denied = []
                 for tc in needs:
                     d = decisions.get(tc["id"], "deny")  # sans décision explicite : refus
@@ -550,6 +579,23 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         text = raw[:MAX_VIEW].decode("utf-8", errors="replace")
         return JSONResponse({"path": rel, "abs": real, "text": text, "total_lines": text.count("\n") + 1, "truncated": len(raw) > MAX_VIEW,
                              "line": line, "editor": _editor_uri(real, line)}, headers=nostore)
+
+    @app.post("/api/open-editor", **api)
+    async def open_editor(body: OpenIn):
+        """Ouvre le fichier dans l'éditeur (VS Code par défaut) À PARTIR DU SERVEUR : un lien vscode:// est souvent bloqué par le navigateur."""
+        real = _resolve_for_editor(body.path)
+        editor, uri = os.environ.get("CC_EDITOR", "code"), _editor_uri(real, body.line)
+        if editor not in EDITORS:
+            raise HTTPException(500, f"CC_EDITOR invalide (valeurs : {', '.join(EDITORS)})")
+        exe = shutil.which(editor)
+        if not exe:
+            return JSONResponse({"ok": False, "detail": f"La commande « {editor} » est introuvable sur le serveur.", "fallback": uri}, status_code=501, headers=nostore)
+        try:  # argv fixe, pas de shell ; le chemin est absolu (commence par « / ») donc ne peut pas passer pour une option
+            subprocess.Popen([exe, "--goto", f"{real}:{body.line}" if body.line else real], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True, env=T.clean_env())
+        except OSError as exc:
+            return JSONResponse({"ok": False, "detail": f"Lancement impossible ({type(exc).__name__})", "fallback": uri}, status_code=500, headers=nostore)
+        return JSONResponse({"ok": True, "editor": editor, "file": os.path.relpath(real, T.get_workdir())}, headers=nostore)
 
     @app.get("/api/skills", **api)
     async def skills():

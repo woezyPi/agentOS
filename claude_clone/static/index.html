@@ -154,6 +154,8 @@ table.sbs td.hunk,table.sbs td.note{color:var(--quiet);background:#111;padding:3
 @keyframes wnod{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 @keyframes wground{to{stroke-dashoffset:-14}}
 @media (prefers-reduced-motion:reduce){.walker .ground,.walker .leg,.walker .bodyg,.walker .headg{animation:none}}
+.approval.auto{border-color:#4d7a1e;background:#0d140a;opacity:1}.approval.auto h4{color:var(--lime)}
+.message.compacted{opacity:.5}.message.compacted .message-role small{color:var(--orange)}
 </style>
 </head>
 <body>
@@ -213,11 +215,11 @@ const current=()=>state.conversations.find(c=>c.id===state.active);
 let roleTitles={coder:'AGENT CODEUR'};
 const label=k=>(roleTitles[k]||String(k||'AGENT')).toUpperCase();
 
-let supModel='',busy=false,controller=null,raf=0,runStart=0,lastEvent=0;
+let ctxInfo=null,supModel='',busy=false,controller=null,raf=0,runStart=0,lastEvent=0;
 function tickText(){if(!busy||!runStart)return '';const t=Math.floor((Date.now()-runStart)/1000),q=Math.floor((Date.now()-lastEvent)/1000);return t+' s'+(q>=6&&t-q>=2?' · '+q+' s sans signal':'')}
 setInterval(()=>{if(busy)document.querySelectorAll('.status-time').forEach(e=>e.textContent=tickText())},500);
 function closeMenu(){app.classList.remove('menu-open')}
-function start(){const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
+function start(){ctxInfo=null;const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
 function select(id){if(busy||!state.conversations.some(c=>c.id===id))return;state.active=id;save();render();closeMenu();syncPending();refreshCtx()}
 function remove(id){if(busy)return;const c=state.conversations.find(c=>c.id===id);if(!c||!confirm('Supprimer cette conversation (et son historique côté serveur) ?'))return;api('/api/threads/'+encodeURIComponent(id),{method:'DELETE'}).catch(()=>{});state.conversations=state.conversations.filter(c=>c.id!==id);if(state.active===id)state.active=state.conversations[0]?.id??null;if(!state.active){start();return}save();render()}
 
@@ -308,8 +310,9 @@ function renderBlock(b,m){
     if(b.agent)return agentCard(b);
     const d=el('details','tool '+(b.status==='error'?'err':b.status==='ok'?'ok':''));d.open=!!b.open;d.ontoggle=()=>{b.open=d.open};const s=el('summary');s.append(el('span','t-name','⚙ '+b.name),el('span','t-sum',b.summary||''),el('span','',run?'…':b.status==='error'?'✖':'✔'));d.append(s);if(b.result){const p=el('pre','result',b.result+(b.truncated?'\n… [tronqué]':''));d.append(p)}return d}
   if(b.t==='approval'){
-    const d=el('div','approval'+(b.resolved?' resolved':''));d.append(el('h4','',b.resolved?'CONFIRMATION — TRAITÉE':'CONFIRMATION REQUISE'));
+    const d=el('div','approval'+(b.resolved?' resolved':'')+(b.auto?' auto':''));d.append(el('h4','',b.auto?'⚡ MODIFICATION AUTO-APPROUVÉE (mode auto) — voici ce qui a changé':(b.resolved?'CONFIRMATION — TRAITÉE':'CONFIRMATION REQUISE')));
     for(const c of b.calls){const w=el('div','call');w.append(el('div','call-title',c.preview?.title||c.name));if(c.reason)w.append(el('div','reason',(b.resolved?'⚡ AUTO : confirmation était requise — ':'⚡ AUTO : confirmation requise — ')+c.reason));if(c.preview)w.append(pvBody(c.preview.kind,c.preview.body));
+      if(b.auto){d.append(w);continue}
       const ch=el('div','choices');const cur=(b.resolved?b.decided:b.choices)?.[c.id];
       for(const [v,t,cls] of [['approve','AUTORISER','ok'],['deny','REFUSER',''],['always','TOUJOURS','ok']]){const bt=el('button','choice'+(cur===v?' sel '+cls:''),t);bt.type='button';bt.disabled=!!b.resolved||busy;bt.title=v==='always'?(c.name==='execute_bash'?'Commande sûre : toutes les commandes de la liste blanche passent ensuite sans question. Sinon : cette commande exacte seulement.':'Ne plus demander pour ce fichier (jusqu’à la fin de la session)'):'';bt.onclick=()=>{b.choices[c.id]=v;schedule()};ch.append(bt)}
       w.append(ch);d.append(w)}
@@ -328,11 +331,11 @@ function linkifyPaths(root){
   for(const n of nodes){const text=n.nodeValue,frag=document.createDocumentFragment();let last=0,m;FP.lastIndex=0;
     while((m=FP.exec(text))){if(m.index>last)frag.append(text.slice(last,m.index));const a=document.createElement('span');a.className='fp';a.dataset.path=m[1];if(m[2])a.dataset.line=m[2];a.title='Ctrl+clic : ouvrir '+m[1]+(m[2]?' (ligne '+m[2]+')':'');a.textContent=m[0];frag.append(a);last=m.index+m[0].length}
     if(last<text.length)frag.append(text.slice(last));n.replaceWith(frag)}}
-const fileview=$('fileview'),fvBody=$('fvBody');let fvPath='';
+const fileview=$('fileview'),fvBody=$('fvBody');let fvPath='',fvLine=0;
 function toast(t){document.querySelectorAll('.toast').forEach(x=>x.remove());const e=el('div','toast',t);document.body.append(e);setTimeout(()=>e.remove(),3500)}
 function closeFile(){fileview.hidden=true}
 function showFile(j,line){
-  fvPath=j.path;$('fvPath').textContent=j.path+(line?':'+line:'');$('fvEditor').href=j.editor;fvBody.replaceChildren();
+  fvPath=j.path;fvLine=line||0;$('fvPath').textContent=j.path+(line?':'+line:'');$('fvEditor').href=j.editor;fvBody.replaceChildren();
   const lines=j.text.split('\n'),cap=6000;let hit=null;
   lines.slice(0,cap).forEach((t,i)=>{const row=el('div','fv-row'+(String(i+1)===String(line)?' hit':''));row.append(el('i','',String(i+1)),el('span','',t));if(row.classList.contains('hit'))hit=row;fvBody.append(row)});
   if(lines.length>cap||j.truncated)fvBody.append(el('div','fv-note','… affichage tronqué ('+(j.truncated?'fichier de plus de 400 Ko':lines.length+' lignes')+'). Ouvre-le dans VS Code pour le voir en entier.'));
@@ -348,6 +351,11 @@ async function openFile(path,line){
 document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('.fp');if(a&&(e.ctrlKey||e.metaKey)){e.preventDefault();openFile(a.dataset.path,a.dataset.line)}});
 document.addEventListener('keydown',e=>{if(e.key==='Control'||e.key==='Meta')document.body.classList.add('ctrl');if(e.key==='Escape'&&!fileview.hidden)closeFile()});
 document.addEventListener('keyup',e=>{if(e.key==='Control'||e.key==='Meta')document.body.classList.remove('ctrl')});window.addEventListener('blur',()=>document.body.classList.remove('ctrl'));
+$('fvEditor').addEventListener('click',async e=>{e.preventDefault();const href=$('fvEditor').getAttribute('href');if(!fvPath||!href||href==='#')return;
+  try{const r=await api('/api/open-editor',{method:'POST',body:JSON.stringify({path:fvPath,line:parseInt(fvLine||0,10)||0})});const j=await r.json().catch(()=>({}));
+    if(r.ok){toast('Ouvert dans VS Code');return}
+    toast((typeof j.detail==='string'?j.detail:'Ouverture impossible')+' — essai via le lien du navigateur…');setTimeout(()=>{location.href=j.fallback||href},700)}
+  catch(err){toast('Ouverture impossible : '+err.message);location.href=href}});
 $('fvClose').onclick=closeFile;$('fvCopy').onclick=async()=>{try{await navigator.clipboard.writeText(fvPath);toast('Chemin copié')}catch{toast('Copie impossible')}};
 const WALKER_SVG='<svg viewBox="-4 0 108 122" aria-hidden="true"><line class="ground" x1="-4" y1="117" x2="104" y2="117" fill="none"/><g class="bodyg"><g class="headg"><polygon class="c1" points="70,38 78,38.5 78.5,25.5 71.5,25"/><polygon class="c2" points="75,2.5 99,5 96.5,26.5 73.5,24"/></g><polygon class="c1" points="0,55 80,36 84,83 0,88"/><rect class="eye" x="57" y="49" width="15" height="16" transform="rotate(-6 64 57)"/><rect class="leg a c1" x="1" y="84" width="19" height="29"/><rect class="leg b c1" x="40" y="82" width="16" height="31"/><rect class="leg a c1" x="72" y="80" width="16" height="25"/></g></svg>';
 function walker(){const w=el('span','moulinette walker');w.innerHTML=WALKER_SVG;return w}   // SVG statique et de confiance : aucun contenu venant d'un modèle
@@ -377,7 +385,7 @@ function whoLine(m,live){
   return w}
 function renderMessage(m){
   const art=el('article','message '+(m.role==='user'?'user':'agent'));
-  const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m.role!=='user'&&supModel&&/^SUPERVISEUR$/i.test(m.agent||'SUPERVISEUR'))rl.append(el('small','',supModel));art.append(rl);
+  const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m._old){art.classList.add('compacted');rl.append(el('small','','dans le résumé'))}if(m.role!=='user'&&supModel&&/^SUPERVISEUR$/i.test(m.agent||'SUPERVISEUR'))rl.append(el('small','',supModel));art.append(rl);
   const content=el('div');const body=el('div','message-content');
   if(m.role==='user'||!m.blocks){body.textContent=m.text||''}else{let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));body.append(sl)}}
   content.append(body);
@@ -391,6 +399,8 @@ function renderThreads(){threads.replaceChildren();for(const c of state.conversa
 function render(){
   const c=current();renderThreads();$('conversationTitle').textContent=c?.title?.toUpperCase()||'NOUVELLE CONVERSATION';
   const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<80;
+  let oldTurns=0;if(c&&ctxInfo&&ctxInfo.summary_chars>0&&ctxInfo.turns>0){oldTurns=Math.max(0,c.messages.filter(x=>x.role==='user').length-ctxInfo.turns)}
+  {let u=0;for(const x of (c?c.messages:[])){if(x.role==='user')u++;x._old=u>0&&u<=oldTurns}}
   feed.replaceChildren();
   document.querySelector('.content').classList.toggle('wide',!!c&&c.messages.some(m=>m.blocks&&m.blocks.filter(b=>b.t==='tool'&&b.agent).length>=2));
   sendBtn.textContent=busy?'STOP ■':'ENVOYER ↗';sendBtn.classList.toggle('stop',busy);
@@ -405,9 +415,9 @@ function schedule(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;render()}
 
 // --- jauge de contexte + compaction manuelle ---
 const kfmt=n=>n==null?'?':n>=1e6?(n/1e6).toFixed(1)+' M':Math.round(n/1000)+' k';
-function paintCtx(i){if(!i)return;const pct=Math.min(100,i.pct_compact);ctxFill.style.width=pct+'%';ctxLine.classList.toggle('warn',i.pct_compact>=80);
+function paintCtx(i){if(!i)return;ctxInfo=i;const pct=Math.min(100,i.pct_compact);ctxFill.style.width=pct+'%';ctxLine.classList.toggle('warn',i.pct_compact>=80);
   ctxText.textContent='CONTEXTE ≈ '+kfmt(i.tokens)+(i.window?' / '+kfmt(i.window)+' ('+i.pct_window+' %)':'')+' · AUTO-COMPACTION À '+kfmt(i.compact_at)+(i.summary_chars?' · RÉSUMÉ ✓':'')}
-async function refreshCtx(){const c=current();if(!c)return;try{const r=await api('/api/threads/'+encodeURIComponent(c.id)+'/context');if(r.ok)paintCtx(await r.json())}catch{}}
+async function refreshCtx(){const c=current();if(!c)return;try{const r=await api('/api/threads/'+encodeURIComponent(c.id)+'/context');if(r.ok){paintCtx(await r.json());schedule()}}catch{}}
 compactBtn.onclick=async()=>{const c=current();if(!c||busy)return;const focus=window.prompt('Compacter maintenant. Consigne optionnelle pour le résumé (ex. « garde surtout les décisions ») :','');if(focus===null)return;
   compactBtn.disabled=true;compactBtn.textContent='COMPACTAGE…';
   try{const r=await api('/api/threads/'+encodeURIComponent(c.id)+'/compact',{method:'POST',body:JSON.stringify({focus})});const j=await r.json().catch(()=>({}));
@@ -437,7 +447,7 @@ function handle(ev,m){
       if(b.steps.length>80)b.steps.splice(0,b.steps.length-80);m.status=label(b.agent)+(b.model?' · '+b.model:'')+(b.panel?' · PANEL':'')+' au travail… ('+b.steps.filter(x=>x.k==='tool').length+' outils)'}break;
     case 'plan':{const i=m.blocks.findIndex(x=>x.t==='plan');const b={t:'plan',todos:ev.todos};if(i>=0)m.blocks[i]=b;else m.blocks.push(b)}break;
     case 'notice':m.blocks.push({t:'notice',level:ev.level,text:ev.text});break;
-    case 'auto':m.blocks.push({t:'notice',level:'info',text:'⚡ auto : '+ev.name+'('+ev.summary+') — '+ev.why});break;
+    case 'auto':if(ev.preview){closeText(m);m.blocks.push({t:'approval',calls:[{id:ev.id||('auto-'+Date.now()),name:ev.name,summary:ev.summary,preview:ev.preview}],choices:{},resolved:true,auto:true,decided:{}})}else m.blocks.push({t:'notice',level:'info',text:'⚡ auto : '+ev.name+'('+ev.summary+') — '+ev.why});break;
     case 'approval':closeText(m);m.blocks.push({t:'approval',calls:ev.calls,choices:{},resolved:false});break;
     case 'done':m.usage=(ev.usage||'')+((ev.models||[]).length?' · modèles : '+ev.models.join(' · '):'');m.status='';if(ev.context)paintCtx(ev.context);break;
     case 'error':m.blocks.push({t:'notice',level:'warn',text:'Erreur : '+ev.text});m.status='';break;
