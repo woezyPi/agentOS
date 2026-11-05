@@ -397,6 +397,8 @@ async def main() -> int:
     db = STATE_DIR / "sessions.db"
     async with AsyncSqliteSaver.from_conn_string(str(db)) as saver:
         os.chmod(db, 0o600)  # les sessions contiennent du code et des sorties de commandes
+        await saver.conn.execute("PRAGMA journal_mode=WAL")  # checkpoints sans fsync bloquant
+        await saver.conn.execute("PRAGMA synchronous=NORMAL")
         mcp_tools, mcp_allowed, mcp_report = await load_mcp_tools()
         register_extra_tools(mcp_tools, mcp_allowed)
         graph = build_graph(settings, checkpointer=saver)

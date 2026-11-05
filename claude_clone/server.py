@@ -417,6 +417,8 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         db = state_dir / "sessions.db"
         async with AsyncSqliteSaver.from_conn_string(str(db)) as saver:
             os.chmod(db, 0o600)
+            await saver.conn.execute("PRAGMA journal_mode=WAL")        # écritures de checkpoint sans fsync bloquant
+            await saver.conn.execute("PRAGMA synchronous=NORMAL")
             tools, allowed, report = await load_mcp_tools()
             T.register_extra_tools(tools, allowed)
             rt.graph = build_graph(settings, checkpointer=saver)

@@ -18,6 +18,7 @@ Gestion des sorties LLM malformées (le point faible des modèles open-weights) 
 """
 from __future__ import annotations
 
+import httpx
 import asyncio
 import operator
 import re
@@ -257,7 +258,7 @@ def make_llm(base_url: str, api_key: str, model: str, temperature: float, role: 
         base_url=base_url,
         api_key=api_key,
         temperature=temperature,
-        timeout=180,
+        timeout=httpx.Timeout(180, connect=10),  # connexion : échec rapide (proxy/passerelle injoignable) → failover sans attendre
         stream_usage=True,  # tokens consommés même en streaming (télémétrie)
         callbacks=[UsageCallback(role, model)],
         max_retries=max_retries,  # retries réseau/429/5xx avec backoff gérés par le SDK openai
