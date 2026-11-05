@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-clone"
+version = "0.1.0"
+description = "Assistant de code CLI multi-agents (superviseur + codeur) sur LangGraph, pour modèles compatibles OpenAI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-openai>=1.0",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "rich>=13",
+    "prompt-toolkit>=3.0",
+]
+
+[project.scripts]
+cc = "claude_clone.main:cli"
+
+[tool.setuptools]
+packages = ["claude_clone"]
