@@ -13,6 +13,7 @@ Ce n'est pas une preuve d'innocuité : un script python du projet peut écrire c
 from __future__ import annotations
 
 import os
+import re
 import shlex
 
 from claude_clone import tools as tools_mod
@@ -21,7 +22,7 @@ SAFE_CMDS = {
     "ls", "cat", "head", "tail", "wc", "grep", "rg", "sort", "uniq", "cut", "tr", "diff", "echo", "printf", "pwd",
     "true", "false", "test", "[", "which", "file", "stat", "du", "df", "tree", "date", "basename", "dirname",
     "realpath", "mkdir", "touch", "cp", "mv", "cd", "find", "sed", "git", "python", "python3", "pytest", "ruff",
-    "black", "mypy",
+    "black", "mypy", "whoami", "uname", "hostname", "id", "env", "printenv", "nproc", "command", "type",
 }
 GIT_OK = {"status", "diff", "log", "show", "add", "commit", "blame", "rev-parse", "ls-files"}
 FIND_BAD = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"}
@@ -30,9 +31,11 @@ SEPARATORS = {";", "&&", "||", "|"}
 REDIRECTS = {">", ">>", ">&", "<"}
 FORBIDDEN_SUBSTRINGS = ("$(", "`", "<(", ">(", "${")
 # Code Python inline (python -c "...") : garde-fou heuristique — la vraie barrière reste l'isolation + l'absence de réseau.
-PY_INLINE_RISKY = ("subprocess", "os.system", "os.popen", "os.exec", "os.spawn", "shutil", "rmtree", "os.remove", "os.unlink",
-                   "os.rmdir", "socket", "urllib", "http", "requests", "ctypes", "__import__", "eval(", "exec(", "compile(",
-                   "importlib", "pty", "/etc", "/home", "/root", "/proc", "/sys", "/var", "/usr", "/dev/", "~", "..")
+PY_RISKY = re.compile("|".join([
+    r"\bsubprocess\b", r"\bos\.(system|popen|exec\w*|spawn\w*|remove|unlink|rmdir|removedirs|chmod|chown|kill)\b",
+    r"\bshutil\b", r"\brmtree\b", r"\bctypes\b", r"__import__", r"\beval\s*\(", r"\bexec\s*\(", r"\bcompile\s*\(",
+    r"\bimportlib\b", r"\bpty\b", r"\.\./", r"/(etc|root|proc|sys|var|usr)\b", r"/dev/(?!null)",
+]))  # le réseau est coupé (offline) et $HOME masqué : inutile de les filtrer ici
 
 
 def _unquoted_newline(cmd: str) -> bool:
@@ -59,8 +62,11 @@ def _unquoted_newline(cmd: str) -> bool:
     return False
 
 
+ENV_TEMPLATES = {".env.example", ".env.sample", ".env.template", ".env.dist"}  # modèles de config : pas de secret
+
+
 def _protected(path: str) -> bool:
-    return any(p in PROTECTED or p.startswith(".env") for p in path.replace("\\", "/").split("/") if p)
+    return any(p in PROTECTED or (p.startswith(".env") and p not in ENV_TEMPLATES) for p in path.replace("\\", "/").split("/") if p)
 
 
 def _tokens(cmd: str) -> list[str]:
@@ -75,8 +81,10 @@ def _path_ok(tok: str) -> bool:
     if _protected(tok):
         return False
     if tok.startswith(("/", "~")) or ".." in tok.split("/"):
+        if tok == "~" or tok.startswith("~/"):
+            return True  # HOME est un tmpfs vide dans l'isolation : rien à y lire ni à y casser
         if tok.startswith("~"):
-            return False
+            return False  # ~autre_utilisateur
         try:
             real = os.path.realpath(os.path.join(tools_mod.WORKDIR, tok))
             return tools_mod._inside(real, tools_mod.WORKDIR)
@@ -85,9 +93,42 @@ def _path_ok(tok: str) -> bool:
     return True
 
 
-def classify_bash(command: str) -> tuple[bool, str]:
+INTERPRETER = re.compile(r"^(python[0-9.]*|pytest|ruff|black|mypy)$")
+HEREDOC = re.compile(r"^(?P<pre>[^\n]*?)<<-?[ \t]*(?P<q>['\"])(?P<tag>\w+)(?P=q)[ \t]*\n(?P<body>.*)\n(?P=tag)[ \t]*\n?$", re.S)
+
+
+def _effective_head(head: str) -> str:
+    """`.venv/bin/python` ou `./venv/bin/pytest` DANS le dossier de travail = l'interpréteur correspondant."""
+    if "/" in head and INTERPRETER.match(os.path.basename(head)):
+        lexical = os.path.abspath(os.path.join(tools_mod.WORKDIR, head))
+        if tools_mod._inside(lexical, tools_mod.WORKDIR):
+            name = os.path.basename(head)
+            return "python3" if name.startswith("python") else name
+    return head
+
+
+def classify_bash(command: str, *, cmds: set[str] | None = None, git: set[str] | None = None, redirects: bool = True) -> tuple[bool, str]:
+    """`cmds`/`git` restreignent la liste blanche (rôle DevOps : diagnostic seul) ; `redirects=False` interdit > >> <."""
+    allowed, git_ok = (cmds if cmds is not None else SAFE_CMDS), (git if git is not None else GIT_OK)
     if not isinstance(command, str) or not command.strip():
         return False, "commande vide"
+    if (hd := HEREDOC.match(command)) and "\n" not in hd["pre"]:
+        # Heredoc « <<'TAG' » (délimiteur entre guillemets : aucune expansion) pour python / cat, en dernière position.
+        body = hd["body"]
+        if any(line.strip() == hd["tag"] for line in body.split("\n")):
+            return False, "heredoc : le délimiteur apparaît dans le corps (commandes cachées)"
+        ok, why = classify_bash(hd["pre"].strip(), cmds=cmds, git=git, redirects=redirects)
+        if not ok:
+            return ok, why
+        try:
+            head = _effective_head(_tokens(hd["pre"])[0])
+        except (ValueError, IndexError):
+            return False, "heredoc illisible"
+        if head not in ("python", "python3", "cat"):
+            return False, f"heredoc non géré pour {head}"
+        if head != "cat" and (risky := PY_RISKY.search(body)):
+            return False, f"code python (heredoc) sensible ({risky.group(0)})"
+        return True, "heredoc python/cat, exécuté sans réseau"
     if any(s in command for s in FORBIDDEN_SUBSTRINGS):
         return False, "substitution ou variable shell"
     if _unquoted_newline(command):
@@ -102,6 +143,8 @@ def classify_bash(command: str) -> tuple[bool, str]:
         if tok in SEPARATORS:
             segments.append(segment)
             segment = []
+        elif tok in REDIRECTS and not redirects:
+            return False, "redirection interdite (lecture seule)"
         elif tok in REDIRECTS or not set(tok) <= set("<>&|;()"):
             segment.append(tok)
         else:
@@ -111,11 +154,11 @@ def classify_bash(command: str) -> tuple[bool, str]:
         words = [t for t in seg]
         if not words:
             return False, "segment vide"
-        head = words[0]
-        if head not in SAFE_CMDS:
+        head = _effective_head(words[0])
+        if head not in allowed:
             return False, f"commande hors liste blanche ({head})"
         rest = words[1:]
-        if head == "git" and (not rest or rest[0] not in GIT_OK):
+        if head == "git" and (not rest or rest[0] not in git_ok):
             return False, "sous-commande git non autorisée"
         if head == "find" and FIND_BAD & set(rest):
             return False, "find avec action dangereuse"
@@ -125,9 +168,9 @@ def classify_bash(command: str) -> tuple[bool, str]:
             return False, "installation de paquets"
         if head in ("python", "python3") and "-c" in rest:
             code = rest[rest.index("-c") + 1] if rest.index("-c") + 1 < len(rest) else ""
-            risky = next((r for r in PY_INLINE_RISKY if r in code), None)
+            risky = PY_RISKY.search(code)
             if risky:
-                return False, f"code python inline sensible ({risky})"
+                return False, f"code python inline sensible ({risky.group(0)})"
             rest = [t for t in rest if t != code]  # le code n'est pas un chemin : déjà inspecté ci-dessus
         for tok in rest:
             if not tok.startswith("-") and not _path_ok(tok):

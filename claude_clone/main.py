@@ -11,6 +11,7 @@ Commandes : /help  /reset  /exit  (Ctrl-D quitte, Ctrl-C annule la saisie ou le 
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import asyncio
 import difflib
 import json
@@ -34,14 +35,22 @@ from rich.syntax import Syntax
 from rich.text import Text
 
 from claude_clone import tools as tools_mod
+from claude_clone.context import context_info, format_context
 from claude_clone.config import MAX_RETRIES, RECURSION_LIMIT, load_settings
 from claude_clone.autopilot import classify
 from claude_clone.graph import as_text, build_graph
 from claude_clone.memory import load_project_memory
 from claude_clone.telemetry import TELEMETRY
-from claude_clone.tools import DELEGATE_TOOL_NAME, TOOLS_REQUIRING_APPROVAL, apply_edit, resolve_coder_args, safe_path
+from claude_clone.mcp_client import load_mcp_tools
+from claude_clone.prompts import DEFAULT_MODE, MODES
+from claude_clone.skills import load_skills
+from claude_clone import developer as DEV
+from claude_clone.agents import get_roles
+from claude_clone.tools import APPLY_TOOL_NAME, ASK_AGENT_TOOL_NAME, DELEGATE_TOOL_NAME, RESEARCH_TOOL_NAME, register_extra_tools, requires_approval, apply_edit, resolve_coder_args, safe_path
 
 console = Console()
+TURN = {"tools": Counter(), "agents": []}  # qui a travaillé pendant le tour en cours
+ACTIVE_SETTINGS = None  # réglages du CLI en cours (pour la fenêtre de contexte du modèle)
 TOOL_PREVIEW_LINES = 12
 CODER_PREVIEW_LINES = 25
 
@@ -74,15 +83,27 @@ def render_update(node: str, update: dict | None, streamed_text: bool = False) -
             if text and not streamed_text:
                 console.print(Panel(Markdown(text), title="Superviseur", border_style="cyan", title_align="left"))
             for tc in msg.tool_calls:
-                label = "→ Agent Codeur" if tc["name"] == DELEGATE_TOOL_NAME else "⚙"
+                if tc["name"] in (ASK_AGENT_TOOL_NAME, RESEARCH_TOOL_NAME, DELEGATE_TOOL_NAME):
+                    TURN["agents"].append({ASK_AGENT_TOOL_NAME: str(tc["args"].get("role")), RESEARCH_TOOL_NAME: "researcher", DELEGATE_TOOL_NAME: "coder"}[tc["name"]] + (" (panel)" if tc["args"].get("panel") else ""))
+                elif tc["name"] != "update_plan":
+                    TURN["tools"][tc["name"]] += 1
+                label = {DELEGATE_TOOL_NAME: "→ Agent Codeur", RESEARCH_TOOL_NAME: "🔎 Chercheur",
+                         ASK_AGENT_TOOL_NAME: f"🧩 Agent {tc['args'].get('role', '?')}"}.get(tc["name"], "⚙")
                 console.print(Text(f"{label} {tc['name']}({_short_args(tc['args'])})", style="bold yellow"))
         elif isinstance(msg, ToolMessage):
             body = as_text(msg.content).strip()
-            if node == "coder" and msg.status != "error":
+            role = msg.additional_kwargs.get("role")
+            if (node == "coder" or role) and msg.status != "error":
                 lines = body.splitlines()
-                if len(lines) > CODER_PREVIEW_LINES:  # le code complet est montré à la confirmation d'écriture
-                    body = "\n".join(lines[:CODER_PREVIEW_LINES]) + f"\n\n… *(+{len(lines) - CODER_PREVIEW_LINES} lignes, aperçu complet à la confirmation)*"
-                console.print(Panel(Markdown(body), title="Agent Codeur", border_style="green", title_align="left"))
+                if len(lines) > CODER_PREVIEW_LINES:  # le détail complet est montré à la confirmation d'écriture
+                    body = "\n".join(lines[:CODER_PREVIEW_LINES]) + f"\n\n… *(+{len(lines) - CODER_PREVIEW_LINES} lignes)*"
+                roles = get_roles()
+                title, color = (roles[role].title, roles[role].color) if role in roles else ("Agent Codeur", "green")
+                if msg.additional_kwargs.get("panel"):
+                    title += " · PANEL"
+                elif msg.additional_kwargs.get("model"):
+                    title += " · " + msg.additional_kwargs["model"].split("/")[-1]
+                console.print(Panel(Markdown(body), title=title, border_style=color, title_align="left"))
             else:
                 lines = body.splitlines()
                 shown = "\n".join(lines[:TOOL_PREVIEW_LINES])
@@ -92,7 +113,7 @@ def render_update(node: str, update: dict | None, streamed_text: bool = False) -
                 console.print(Text(shown, style=style))
 
 
-def render_pending_call(tc: dict, blocks: list[str]) -> None:
+def render_pending_call(tc: dict, blocks: list[str], values: dict | None = None) -> None:
     """Détail d'un appel sensible avant confirmation."""
     args = tc["args"]
     if tc["name"] == "execute_bash":
@@ -100,10 +121,18 @@ def render_pending_call(tc: dict, blocks: list[str]) -> None:
         console.print(Panel(body, title=f"bash (timeout {args.get('timeout', 'défaut')})", border_style="red", title_align="left"))
     elif tc["name"] == "write_file":
         console.print(Panel(_write_preview(args, blocks), title=f"write_file → {escape(str(args.get('path')))}", border_style="red", title_align="left"))
+    elif tc["name"] == APPLY_TOOL_NAME:
+        cs = next((c for c in (values or {}).get("dev_changes", []) if c["id"] == args.get("change_set")), None)
+        body = Group(Text(DEV.describe(cs), style="dim"), _diff_from_text(DEV.change_set_diff(cs))) if cs else Text("jeu de modifications introuvable — l'outil refusera", style="red")
+        console.print(Panel(body, title=f"apply_dev_changes → jeu #{args.get('change_set')}", border_style="red", title_align="left"))
     elif tc["name"] == "edit_file":
         console.print(Panel(_edit_preview(args), title=f"edit_file → {escape(str(args.get('path')))}", border_style="red", title_align="left"))
     else:
         console.print(Text(f"{tc['name']}({_short_args(args)})", style="red"))
+
+
+def _diff_from_text(diff: str):
+    return Syntax(diff, "diff", theme="ansi_dark")
 
 
 def _diff(old: str, new: str):
@@ -151,10 +180,10 @@ BASH_SAFE_KEY = ("execute_bash", "*liste-blanche*")
 def _allow_key(tc: dict) -> tuple:
     """Clé d'« autorisation pour la session » : commande exacte (bash) ou chemin (fichiers)."""
     a = tc["args"]
-    return (tc["name"], a.get("command") if tc["name"] == "execute_bash" else a.get("path"))
+    return (tc["name"], a.get("command") if tc["name"] == "execute_bash" else a.get("path", a.get("change_set")))
 
 
-async def decide(session: PromptSession, calls: list[dict], blocks: list[str], allow: set, auto: bool = False) -> tuple[list[str], list[str]]:
+async def decide(session: PromptSession, calls: list[dict], values: dict, allow: set, auto: bool = False) -> tuple[list[str], list[str]]:
     """Interroge l'utilisateur appel par appel ; renvoie (ids REFUSÉS, ids bash auto-approuvés à lancer hors réseau).
 
     Réponses : Y/Entrée = oui · n = non · a = oui et ne plus demander (jusqu'à la fin de la session) :
@@ -162,7 +191,7 @@ async def decide(session: PromptSession, calls: list[dict], blocks: list[str], a
     denied: list[str] = []
     offline: list[str] = []
     for tc in calls:
-        if tc["name"] not in TOOLS_REQUIRING_APPROVAL:
+        if not requires_approval(tc["name"]):
             continue
         safe_bash_ok = tc["name"] == "execute_bash" and BASH_SAFE_KEY in allow  # « a » donné sur une commande sûre
         if auto or safe_bash_ok:
@@ -178,7 +207,7 @@ async def decide(session: PromptSession, calls: list[dict], blocks: list[str], a
         if _allow_key(tc) in allow:
             console.print(Text(f"✓ autorisé pour la session : {tc['name']}({_short_args(tc['args'], 60)})", style="dim"))
             continue
-        render_pending_call(tc, blocks)
+        render_pending_call(tc, values.get("coder_blocks", []), values)
         while True:
             try:
                 ans = (await session.prompt_async(HTML("<b><ansired>Exécuter ? [Y/n/a=toujours] </ansired></b>"))).strip().lower()
@@ -250,7 +279,7 @@ async def stream_graph(graph, config, inputs) -> None:
                 if node == "supervisor" and text:
                     if not streaming:
                         status.stop()
-                        console.print(Text("Superviseur ▸", style="bold cyan"))
+                        console.print(Text("Superviseur" + (f" · {ACTIVE_SETTINGS.supervisor_model.split(chr(47))[-1]}" if ACTIVE_SETTINGS else "") + " ▸", style="bold cyan"))
                         streaming = streamed_any = True
                     console.print(Text(text), end="", soft_wrap=True)
                 elif node == "coder" and text:
@@ -270,7 +299,9 @@ async def stream_graph(graph, config, inputs) -> None:
                 streamed_any = False if node == "supervisor" else streamed_any
                 calls = [tc for m in (update or {}).get("messages", []) if isinstance(m, AIMessage) for tc in m.tool_calls]
                 coder_chars = 0
-                msg = "[bold green]Agent Codeur : génération…" if any(tc["name"] == DELEGATE_TOOL_NAME for tc in calls) else "[bold cyan]Superviseur : réflexion…"
+                msg = ("[bold green]Agent Codeur : génération…" if any(tc["name"] == DELEGATE_TOOL_NAME for tc in calls)
+                       else "[bold yellow]Sous-agents : travail en cours…" if any(tc["name"] in (RESEARCH_TOOL_NAME, ASK_AGENT_TOOL_NAME) for tc in calls)
+                       else "[bold cyan]Superviseur : réflexion…")
                 status = new_status(msg)
     finally:
         status.stop()
@@ -281,6 +312,7 @@ async def stream_graph(graph, config, inputs) -> None:
 async def run_turn(graph, session: PromptSession, config: dict, user_text: str, allow: set, auto: bool = False) -> None:
     await repair_dangling_tool_calls(graph, config)
     mark = TELEMETRY.mark()
+    TURN["tools"].clear(); TURN["agents"].clear()
     inputs: dict | None = {"messages": [HumanMessage(user_text)], "retries": 0, "steps": 0}
     try:
         while True:
@@ -292,7 +324,7 @@ async def run_turn(graph, session: PromptSession, config: dict, user_text: str, 
                 return
             # Interruption avant "tools" : le dernier message est l'AIMessage avec les appels.
             calls = snap.values["messages"][-1].tool_calls
-            denied, offline = await decide(session, calls, snap.values.get("coder_blocks", []), allow, auto)
+            denied, offline = await decide(session, calls, snap.values, allow, auto)
             if denied:
                 console.print(f"[red]{len(denied)} appel(s) refusé(s).[/red]")
             # Le noeud "tools" lit cette liste dans sa config et répond « REFUSÉ » à ces appels.
@@ -313,12 +345,20 @@ async def run_turn(graph, session: PromptSession, config: dict, user_text: str, 
         config["configurable"].pop("offline_call_ids", None)
         if line := TELEMETRY.summary(mark):
             console.print(Text(line, style="dim"))
+        if TURN["tools"] or TURN["agents"]:  # qui a travaillé : le superviseur seul, ou avec quels sous-agents
+            sup = (ACTIVE_SETTINGS.supervisor_model.split("/")[-1] if ACTIVE_SETTINGS else "?")
+            direct = ", ".join(f"{k} ×{v}" if v > 1 else k for k, v in TURN["tools"].items())
+            console.print(Text(f"🧭 superviseur ({sup})" + (f" — outils directs : {direct}" if direct else "") + " — sous-agents : " + (", ".join(TURN["agents"]) or "aucun (le superviseur a tout fait lui-même)"), style="dim"))
+        try:  # jauge de contexte en fin de tour
+            console.print(Text("🧮 " + format_context(context_info((await graph.aget_state(config)).values, ACTIVE_SETTINGS), bar=False), style="dim"))
+        except Exception:
+            pass
 
 
 # --------------------------------------------------------------------------- #
 # Boucle principale
 # --------------------------------------------------------------------------- #
-HELP = "/help  aide · /auto  mode auto · /stats  consommation · /reset  nouvelle conversation · /exit  quitter · Ctrl-C  annule · Ctrl-D  quitte"
+HELP = "/help  aide · /skills  liste · /skill NOM  lance un skill · /context  jauge · /compact [consigne]  compacte · /summary  résumé · /doctor  teste les modèles · /mode  posture challenge|direct · /auto  mode auto · /stats  consommation · /reset  nouvelle conversation · /exit  quitter · Ctrl-C  annule · Ctrl-D  quitte"
 STATE_DIR = Path.home() / ".claude_clone"
 
 
@@ -345,7 +385,8 @@ async def main() -> int:
     ap.add_argument("--resume", action="store_true", help="reprend la dernière session de ce dossier")
     args = ap.parse_args()
 
-    settings = load_settings()
+    global ACTIVE_SETTINGS
+    settings = ACTIVE_SETTINGS = load_settings()
     if bad := settings.placeholder_fields():
         console.print(f"[red]Configuration incomplète :[/red] {', '.join(bad)} (voir config.py : LLM_API_KEY ou CEGEDIM_LLM_API_KEY).")
         return 2
@@ -354,9 +395,12 @@ async def main() -> int:
     db = STATE_DIR / "sessions.db"
     async with AsyncSqliteSaver.from_conn_string(str(db)) as saver:
         os.chmod(db, 0o600)  # les sessions contiennent du code et des sorties de commandes
+        mcp_tools, mcp_allowed, mcp_report = await load_mcp_tools()
+        register_extra_tools(mcp_tools, mcp_allowed)
         graph = build_graph(settings, checkpointer=saver)
         session: PromptSession = PromptSession(history=FileHistory(os.path.expanduser("~/.claude_clone_history")))
         auto = args.auto
+        mode = DEFAULT_MODE
         allow: set = set()  # autorisations « toujours » (valables pour la session en cours)
 
         config = _new_config(_threads().get(tools_mod.WORKDIR) if args.resume else None)
@@ -366,13 +410,18 @@ async def main() -> int:
             n = len((await graph.aget_state(config)).values.get("messages", []))
             resumed = f"session reprise ({n} messages)" if n else "aucune session à reprendre : nouvelle session"
 
+        for line in mcp_report:
+            console.print(Text(line, style="dim" if "indisponible" not in line and "illisible" not in line else "yellow"))
+        sk, sk_warns = load_skills()
+        for w in sk_warns:
+            console.print(Text(f"⚠ {w}", style="yellow"))
         mem_files = load_project_memory()[1]
         memory = f" · mémoire : {', '.join(mem_files)}" if mem_files else ""
         auto_note = "\n[bold green]MODE AUTO[/bold green] : actions sûres approuvées sans question (/auto pour désactiver)" if auto else ""
         sandbox = "bash isolé ($HOME masqué)" if tools_mod.sandbox_enabled() else "[yellow]bash NON isolé[/yellow]"
         console.print(Panel.fit(
             f"[bold]claude-clone[/bold]  ·  superviseur [cyan]{settings.supervisor_model}[/cyan]  ·  codeur [green]{settings.coder_model}[/green]\n"
-            f"dossier de travail : {tools_mod.WORKDIR}\n{sandbox}{memory}{auto_note}" + (f" · {resumed}" if resumed else "") + f"\n[dim]{HELP}[/dim]",
+            f"dossier de travail : {tools_mod.WORKDIR}\n{sandbox}{memory}{auto_note}\nposture : {mode} · skills : {len(sk)}" + (f" · {resumed}" if resumed else "") + f"\n[dim]{HELP}[/dim]",
             border_style="blue",
         ))
 
@@ -394,6 +443,48 @@ async def main() -> int:
                 auto = not auto
                 console.print(Text("Mode auto " + ("ACTIVÉ : écritures dans le dossier (hors fichiers sensibles) et commandes de la liste blanche approuvées sans question ; le reste demande toujours confirmation." if auto else "désactivé : confirmation pour chaque action sensible."), style="green" if auto else "dim"))
                 continue
+            if line.startswith("/mode"):
+                choice = line.split(maxsplit=1)[1].strip() if " " in line else ""
+                if choice in MODES:
+                    mode = choice
+                    console.print(Text(f"Posture : {mode} " + ("(challenge les décisions structurantes avant de coder)" if mode == "challenge" else "(exécute sans phase de challenge)"), style="green"))
+                else:
+                    console.print(Text(f"Posture actuelle : {mode}. Usage : /mode challenge | /mode direct", style="dim"))
+                continue
+            if line == "/skills":
+                skills, warns = load_skills()
+                for sk in skills.values():
+                    console.print(Text(f"{sk.name}", style="bold cyan"), Text(f"({'intégré' if sk.builtin else 'utilisateur'}) {sk.description}", style="dim"))
+                for w in warns:
+                    console.print(Text(f"⚠ {w}", style="yellow"))
+                console.print(Text("Usage : /skill NOM [précisions] — ou demande simplement en langage naturel.", style="dim"))
+                continue
+            if line.startswith("/skill "):
+                parts = line.split(maxsplit=2)
+                skills, _ = load_skills()
+                if parts[1] not in skills:
+                    console.print(Text(f"Skill inconnu : {parts[1]}. Disponibles : {', '.join(skills) or 'aucun'}", style="yellow"))
+                    continue
+                line = f"Applique le skill « {parts[1]} »" + (f" — {parts[2]}" if len(parts) > 2 else ".")  # puis tour normal
+            if line == "/context":
+                console.print(Text("Contexte " + format_context(context_info((await graph.aget_state(config)).values, settings)), style="cyan"))
+                continue
+            if line == "/summary":
+                summary = (await graph.aget_state(config)).values.get("summary")
+                console.print(Panel(Markdown(summary), title="Résumé (remplace l'ancien historique)", border_style="cyan") if summary else Text("Aucun résumé : l'historique n'a pas encore été compacté.", style="dim"))
+                continue
+            if line.startswith("/compact"):
+                focus = line[len("/compact"):].strip()
+                with console.status("Compaction…", spinner="dots"):
+                    res = await graph.compact_now(config, focus)
+                console.print(Text(("🗜 " if res["ok"] else "⚠ ") + res["message"], style="green" if res["ok"] else "yellow"))
+                continue
+            if line == "/doctor":
+                from claude_clone.doctor import check_models
+                with console.status("Test des modèles…", spinner="dots"):
+                    report = await check_models(settings)
+                console.print(Text(report))
+                continue
             if line == "/stats":
                 console.print(Text(TELEMETRY.summary() or "Rien à afficher pour l'instant.", style="dim"))
                 continue
@@ -403,6 +494,7 @@ async def main() -> int:
                 allow.clear()
                 console.print("Conversation réinitialisée.", style="dim")
                 continue
+            config["configurable"]["mode"] = mode
             await run_turn(graph, session, config, line, allow, auto)
     console.print("À bientôt.", style="dim")
     return 0

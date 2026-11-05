@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080808">
+<title>AgentOS — Studio</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap');
+:root{color-scheme:dark;--bg:#080808;--rail:#0e0e0e;--line:#303030;--text:#f3f0e9;--soft:#b4b1aa;--quiet:#77746f;--orange:#c7fb5b;--pink:#ff5eac;--lime:#c7fb5b;--mono:'DM Mono',monospace;--sans:'DM Sans',Arial,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text)}body{font-family:var(--sans);font-size:14px}button,input,select,textarea{font:inherit}button{cursor:pointer}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--pink);outline-offset:3px}button{border:0}::selection{background:var(--pink);color:#090909}
+.app{height:100dvh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:24px 15px 16px}.brand{padding:0 12px 38px;display:flex;align-items:center;gap:12px;font-size:20px;font-weight:700;letter-spacing:-1.2px}.mark{width:27px;height:27px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:2px;transform:rotate(-8deg)}.mark i{background:var(--orange)}.mark i:nth-child(2),.mark i:nth-child(5){background:var(--pink)}.mark i:nth-child(3),.mark i:nth-child(7){opacity:0}.mono{font:11px var(--mono);letter-spacing:.3px}.section-label{font:10px var(--mono);color:var(--quiet);letter-spacing:1px;text-transform:uppercase;margin:28px 12px 12px}.new{width:100%;background:var(--orange);color:#090909;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:space-between;padding:13px 15px;transition:background .15s}.new:hover{background:#d8ff7e}.new span:last-child{font-size:20px;line-height:.7}.nav{display:grid;gap:2px}.nav button,.thread{background:transparent;color:var(--soft);text-align:left;padding:11px 12px;width:100%;font-size:12px;display:flex;align-items:center;gap:12px}.nav button:hover,.thread:hover{background:#191919;color:var(--text)}.nav .selected{color:var(--text);background:#1e1e1e}.nav-symbol{width:16px;font:15px var(--mono);color:var(--pink)}.threads{overflow:auto;min-height:0;flex:1}.thread{justify-content:space-between;gap:8px;border-left:2px solid transparent;line-height:1.4}.thread.active{color:var(--text);border-color:var(--orange);background:#1a1a1a}.thread-title{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.delete-thread{color:var(--quiet);background:transparent;flex:none;padding:2px 4px;font-size:16px}.delete-thread:hover{color:var(--pink)}.sidebar-foot{border-top:1px solid var(--line);padding:17px 12px 4px;color:var(--quiet);font:10px/1.7 var(--mono)}.sidebar-foot b{color:var(--soft);font-weight:500}
+.main{min-height:0;display:flex;flex-direction:column}.topbar{height:67px;flex:none;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 35px;gap:12px}.top-left{display:flex;align-items:center;gap:13px;min-width:0}.breadcrumb{font:11px var(--mono);color:var(--quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.breadcrumb strong{color:var(--text);font-weight:500}.swatch{width:9px;height:9px;background:var(--pink);display:inline-block;flex:none}.top-right{display:flex;align-items:center;gap:12px}.model-select{color:var(--text);background:transparent;border:1px solid var(--line);padding:9px 12px;font:11px var(--mono);max-width:180px}.menu-toggle{display:none;background:transparent;color:var(--text);font-size:20px}.status{color:var(--quiet);font:10px var(--mono);white-space:nowrap}.content{width:min(100%,790px);margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column;padding:0 30px}.feed{flex:1;min-height:0;overflow:auto;scrollbar-color:#383838 transparent;scrollbar-width:thin}.empty{min-height:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:42px 0 70px}.empty-kicker{color:var(--orange);font:11px var(--mono);letter-spacing:1.5px;margin-bottom:24px}.empty h1{font-size:clamp(44px,6vw,76px);font-weight:600;letter-spacing:-5px;line-height:1.01;margin:0 0 24px}.empty h1 em{font-style:normal;color:var(--pink)}.empty p{max-width:460px;color:var(--soft);font-size:15px;line-height:1.7;margin:0 0 35px}.suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;width:100%;max-width:560px}.suggestion{text-align:left;border:1px solid var(--line);color:var(--text);background:transparent;padding:16px;min-height:78px;display:flex;flex-direction:column;justify-content:space-between;gap:13px}.suggestion:hover{border-color:var(--pink)}.suggestion span{font-size:12px}.suggestion small{font:10px var(--mono);color:var(--orange)}.conversation{padding:45px 0 22px;display:flex;flex-direction:column;gap:38px}.message{display:grid;grid-template-columns:74px minmax(0,1fr);column-gap:22px}.message-role{font:10px var(--mono);color:var(--quiet);padding-top:3px}.message.user .message-role{color:var(--orange)}.message.agent .message-role{color:var(--pink)}.message-content{font-size:14px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}.message.user .message-content{font-weight:500}.message-actions{display:flex;gap:14px;margin-top:10px}.tiny-action{font:10px var(--mono);color:var(--quiet);padding:4px 0;background:transparent}.tiny-action:hover{color:var(--pink)}.notice{color:var(--quiet);font-size:12px;line-height:1.6;border-left:2px solid var(--orange);padding-left:12px;margin:24px 0}.composer-area{flex:none;padding:18px 0 25px;background:var(--bg)}.composer{border:1px solid #4a4a4a;background:#111;padding:17px 17px 11px}.composer:focus-within{border-color:var(--orange)}textarea{width:100%;background:transparent;border:none;outline:none!important;resize:none;color:var(--text);font:14px/1.65 var(--sans);min-height:70px;max-height:220px;display:block}textarea::placeholder{color:var(--quiet)}.composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.hint{font:10px var(--mono);color:var(--quiet)}.send{background:var(--pink);color:#080808;padding:10px 17px;font:12px var(--mono);font-weight:500}.send:hover{background:#ff83be}.send:disabled{opacity:.4;cursor:not-allowed}.footer{color:var(--quiet);text-align:center;margin-top:11px;font:10px var(--mono)}.small-label{font:10px var(--mono);color:var(--quiet)}.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+@media(max-width:850px){.app{grid-template-columns:1fr}.sidebar{position:fixed;inset:0 auto 0 0;width:244px;z-index:5;transform:translateX(-100%);transition:transform .2s;box-shadow:16px 0 55px #0009}.app.menu-open .sidebar{transform:translateX(0)}.menu-toggle{display:block}.topbar{padding:0 18px}.content{padding:0 18px}.status{display:none}.empty h1{letter-spacing:-3px}}@media(max-width:520px){.suggestions{grid-template-columns:1fr}.empty{justify-content:flex-start;padding-top:100px}.empty h1{font-size:52px}.message{grid-template-columns:1fr;gap:8px}.message-role{padding:0}.conversation{padding-top:28px;gap:32px}.composer-area{padding-bottom:12px}.hint{font-size:9px}}
+
+/* AgentOS / READABILITY + LIVE TRACE */
+:root{--font-scale:1}
+.content{width:min(100%,1050px)}
+.message-content{font-size:calc(17px * var(--font-scale));line-height:1.7;white-space:normal}
+.message-content p{margin:0 0 .85em}.message-content p:last-child{margin-bottom:0}
+.message-content strong{font-weight:700;color:#fff}
+.message-content h2,.message-content h3{margin:1em 0 .45em;font-size:1.16em;letter-spacing:-.015em;line-height:1.4}
+.message-content h2:first-child,.message-content h3:first-child{margin-top:0}
+.message-content ul,.message-content ol{padding-left:1.4em;margin:.4em 0 1em}
+.message-content li{padding-left:.15em;margin:.25em 0}
+.message-content code{background:#202020;color:var(--lime);padding:2px 5px;font:0.83em var(--mono)}
+.message-content pre{padding:15px;background:#141414;border:1px solid var(--line);overflow:auto;margin:.65em 0 1.1em;white-space:pre}
+.message-content pre code{background:none;padding:0;color:#e9e9e9;font-size:12px}
+.message-content blockquote{margin:1em 0;padding:4px 14px;border-left:2px solid var(--pink);color:var(--soft)}
+.message-content hr{border:0;border-top:1px solid var(--line);margin:1.2em 0}
+.message{grid-template-columns:90px minmax(0,1fr);column-gap:22px}
+.message.user .message-content{border-left:2px solid var(--lime);padding-left:17px}
+.conversation{gap:33px;padding-top:36px}
+textarea{font-size:16px;min-height:44px}
+.composer{padding:14px 16px 10px}
+.composer-area{padding-top:10px}
+.font-control,.trace-toggle{padding:8px 10px;background:transparent;color:var(--soft);border:1px solid var(--line);font:11px var(--mono);white-space:nowrap}
+.font-control:hover,.trace-toggle:hover{color:var(--text);border-color:var(--lime)}
+.trace-toggle.active{border-color:var(--lime);color:var(--lime)}
+.trace-layout{flex:1;min-height:0;display:flex}
+.trace-layout .content{flex:1;min-width:0}
+.trace-panel{flex:0 0 320px;width:320px;border-left:1px solid var(--line);background:#0b0b0b;display:flex;flex-direction:column;min-height:0}
+.trace-panel[hidden]{display:none}
+.trace-header{display:flex;justify-content:space-between;align-items:center;padding:20px 18px;border-bottom:1px solid var(--line);gap:10px}
+.trace-header h2{font-size:13px;margin:0;letter-spacing:0}
+.trace-copy{font:11px/1.6 var(--mono);color:var(--quiet)}
+.trace-scroll{flex:1;min-height:0;overflow:auto;padding:17px}
+.trace-section{font:10px var(--mono);color:var(--pink);margin:20px 0 12px}
+.trace-section:first-child{margin-top:0}
+.node{display:flex;align-items:center;gap:9px;padding:11px 8px;border-bottom:1px solid #252525;font-size:12px}
+.node .node-dot{height:7px;width:7px;flex:none;background:#666}
+.node.active .node-dot{background:var(--lime)}
+.node .node-label{flex:1}.node small{color:var(--quiet);font:10px var(--mono)}
+.trace-event{position:relative;border-left:1px solid #333;padding:0 0 20px 15px;margin-left:4px;overflow-wrap:anywhere}
+.trace-event:before{content:"";position:absolute;top:2px;left:-4px;width:7px;height:7px;background:#777}
+.trace-event.handoff:before{background:var(--pink)}
+.trace-event.tool:before{background:var(--lime)}
+.trace-event.error:before{background:#ff7070}
+.trace-event .trace-name{color:var(--text);font-size:12px;font-weight:700;margin-bottom:5px}
+.trace-event .trace-time{color:var(--quiet);font:10px var(--mono)}
+.trace-event p{margin:5px 0 0;font-size:12px;line-height:1.55;color:var(--soft)}
+.trace-empty{color:var(--quiet);font:12px/1.7 var(--sans)}
+.trace-warning{color:var(--soft);font:11px/1.6 var(--sans);border-top:1px solid var(--line);padding:13px 18px}
+.metrics{font:10px/1.6 var(--mono);color:var(--quiet);margin-top:9px}
+.small-action{font:10px var(--mono);background:transparent;color:var(--quiet);padding:4px}
+.small-action:hover{color:var(--pink)}
+@media(max-width:1200px){.trace-panel{position:fixed;right:0;top:67px;bottom:0;z-index:4;box-shadow:-12px 0 40px #000;max-width:min(90vw,360px)}}
+@media(max-width:650px){.topbar{height:auto;min-height:67px;flex-wrap:wrap;padding-block:12px}.top-right{gap:6px;flex-wrap:wrap}.message{grid-template-columns:1fr;gap:7px}.message-content{font-size:calc(16px * var(--font-scale))}.trace-panel{top:0;z-index:10}}
+/* V3 — legibility first, no gradients or visual noise */
+:root{--soft:#d2d0cb;--quiet:#a5a39d;--line:#3a3a3a;--font-scale:1.2}
+body{font-size:16px}
+.sidebar{padding-top:22px}
+.brand{font-size:23px}
+.nav button,.thread{font-size:14px;min-height:45px}
+.section-label{font-size:11px;color:#a5a39d}
+.new{font-size:14px;padding:16px 13px}
+.topbar{min-height:72px;height:auto;padding:12px 28px}
+.breadcrumb{font-size:12px}
+.model-select{font-size:12px;min-height:38px}
+.status{font-size:11px;color:#d4d0cb}
+.content{width:min(100%,1120px);padding-inline:34px}
+.conversation{padding-top:30px;gap:22px;padding-bottom:16px}
+.message{grid-template-columns:108px minmax(0,1fr);gap:18px;padding:18px 0;border-bottom:1px solid #252525}
+.message-role{font-size:12px;font-weight:700;padding-top:6px}
+.message-content{font-size:calc(18px * var(--font-scale));line-height:1.65;letter-spacing:.005em}
+.message-content p{margin:0 0 .75em}
+.message-content h2,.message-content h3{font-size:1.12em}
+.message.user .message-content{border:0;padding-left:0;font-weight:600;color:#fff}
+.message.agent .message-content{font-weight:400}
+.message.agent .message-content strong{color:#fff;font-weight:800}
+.message-actions{margin-top:12px}
+.tiny-action{font-size:11px;color:#bdbbb5;padding:5px 0}
+.metrics{font-size:11px;color:#b1afa9;margin-top:10px}
+.composer-area{padding:12px 0 16px}
+.composer{border:2px solid var(--lime);padding:15px 18px 12px;background:#111}
+textarea{font-size:18px;line-height:1.5;min-height:60px}
+textarea::placeholder{color:#b4b1aa}
+.hint,.footer{font-size:11px;color:#afaca6}
+.send{font-size:13px;padding:13px 20px;font-weight:700}
+.font-control,.trace-toggle{font-size:12px;color:#f2f0eb;padding:9px 12px}
+.trace-header h2{font-size:15px}
+.trace-copy,.trace-warning,.trace-event p,.node{font-size:13px}
+.trace-section{font-size:11px}
+.empty p{font-size:17px;color:#d2d0cb}
+.suggestion span{font-size:14px}
+@media(max-width:850px){.content{padding-inline:22px}.message{grid-template-columns:75px minmax(0,1fr)}.message-content{font-size:calc(17px * var(--font-scale))}}
+@media(max-width:550px){.content{padding-inline:16px}.message{grid-template-columns:1fr;gap:5px;padding:15px 0}.message-content{font-size:calc(16px * var(--font-scale))}.topbar{padding:12px 15px}.hint{display:none}}
+</style>
+<!-- agentos readability start -->
+<style>
+/* AgentOS — lisibilité renforcée, sans modification du backend. */
+:root { --agentos-reading-size: 21px; }
+body { font-size: 16px !important; }
+.content { width: min(100%, 1180px) !important; }
+.conversation { gap: 27px !important; padding-top: 28px !important; }
+.message { grid-template-columns: 108px minmax(0, 1fr) !important; column-gap: 22px !important; }
+.message-content,
+.message .message-content,
+.message-content p,
+.message-content li,
+.message-content blockquote { font-size: var(--agentos-reading-size) !important; line-height: 1.65 !important; letter-spacing: 0 !important; }
+.message-content strong { font-weight: 750 !important; color: #fff !important; }
+.message-content h1,.message-content h2 { font-size: 27px !important; line-height: 1.3 !important; }
+.message-content h3 { font-size: 24px !important; line-height: 1.35 !important; }
+.message-role,
+.message .message-role { font-size: 13px !important; line-height: 1.6 !important; font-weight: 600 !important; }
+.message-actions .tiny-action,
+.tiny-action { font-size: 12px !important; }
+.metrics, .message-meta, .message-stats, .message-usage { font-size: 13px !important; line-height: 1.7 !important; color: #aaa7a2 !important; }
+/* Events/tools generated inside a message */
+.message-content .tool-call,
+.message-content .tool-line,
+.message-content .tool-event,
+.message-content .tool-item,
+.message-content .tool-result,
+.message-content .activity-event,
+.message-content pre,
+.message-content pre code { font-size: 14px !important; line-height: 1.7 !important; }
+.message-content code:not(pre code) { font-size: .84em !important; }
+.composer textarea,
+.composer-area textarea,
+textarea { font-size: 19px !important; line-height: 1.6 !important; }
+.composer { padding: 19px 20px 13px !important; }
+.composer-bottom .hint,
+.hint, .footer { font-size: 12px !important; line-height: 1.6 !important; }
+.send { font-size: 14px !important; padding: 12px 21px !important; }
+.nav button,.thread,.new { font-size: 14px !important; }
+.section-label, .breadcrumb, .status, .model-select, .sidebar-foot { font-size: 12px !important; }
+@media(max-width:800px) {
+  :root { --agentos-reading-size: 18px; }
+  .content { padding-left: 16px !important; padding-right: 16px !important; }
+  .message { grid-template-columns: 1fr !important; gap: 7px !important; }
+  .message-role { padding-top: 0 !important; }
+  .message-content pre { overflow-x: auto; }
+}
+
+</style>
+<!-- agentos readability end -->
+</head>
+<body>
+<div class="app" id="app">
+<aside class="sidebar" id="sidebar" aria-label="Navigation">
+  <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>agentos<span style="color:var(--orange)">.</span></div>
+  <button class="new" id="newConversation"><span>Nouvelle conversation</span><span>+</span></button>
+  <div class="section-label">ESPACE</div>
+  <nav class="nav" aria-label="Espace de travail"><button class="selected" type="button"><span class="nav-symbol">▣</span> Conversations</button></nav>
+  <div class="section-label">RÉCENT</div>
+  <div class="threads" id="threads"></div>
+  <div class="sidebar-foot"><b>STUDIO / LOCAL</b><br>Interface autonome<br>Aucun modèle connecté</div>
+</aside>
+<main class="main">
+ <header class="topbar">
+  <div class="top-left"><button class="menu-toggle" id="menuToggle" aria-label="Afficher le menu">☰</button><span class="swatch"></span><div class="breadcrumb">WORKSPACE <span style="color:#555">/</span> <strong id="conversationTitle">NOUVELLE CONVERSATION</strong></div></div>
+  <div class="top-right"><label class="visually-hidden" for="agent">Agent</label><select class="model-select" id="agent"><option value="auto">AUTO / ROUTEUR</option><option value="codeur">CODEUR</option><option value="reflexion">RÉFLEXION</option><option value="reviewer">REVIEWER</option></select><button class="font-control" id="fontDown" type="button" title="Réduire la taille du texte">A−</button><button class="font-control" id="fontUp" type="button" title="Augmenter la taille du texte">A+</button><button class="trace-toggle" id="traceToggle" type="button" aria-controls="tracePanel" aria-expanded="false">ACTIVITÉ ↗</button><div class="status">● MODE DÉMO</div></div>
+ </header>
+ <div class="trace-layout"><div class="content">
+  <section class="feed" id="feed" aria-live="polite"></section>
+  <div class="composer-area"><form id="chatForm" class="composer"><label class="visually-hidden" for="prompt">Votre message</label><textarea id="prompt" rows="2" placeholder="Écris ce que tu veux construire…"></textarea><div class="composer-bottom"><span class="hint">ENTRÉE POUR ENVOYER · SHIFT + ENTRÉE POUR SAUTER UNE LIGNE</span><button class="send" id="send" type="submit">ENVOYER ↗</button></div></form><div class="footer">UN SEUL ESPACE. DES AGENTS SPÉCIALISÉS. ZÉRO DISTRACTION.</div></div>
+ </div><aside class="trace-panel" id="tracePanel" hidden aria-label="Activité des agents"><div class="trace-header"><div><h2>ACTIVITÉ / AGENTS</h2><div class="trace-copy">Événements observés</div></div><button class="small-action" id="traceClose" type="button">FERMER ×</button></div><div class="trace-scroll"><div class="trace-section">AGENTS OBSERVÉS</div><div id="traceNodes"></div><div class="trace-section">CHRONOLOGIE</div><div id="traceEvents"></div></div><div class="trace-warning">Seules les actions locales et les données d’exécution réellement reçues sont affichées. Aucun échange inter-agent n’est inventé.</div></aside></div>
+</main>
+</div>
+<script>
+(() => {
+'use strict';
+const KEY='agentos-brut-v1', TRACE_KEY='agentos-trace-v1';
+const $=id=>document.getElementById(id);
+const app=$('app'),feed=$('feed'),threads=$('threads'),prompt=$('prompt'),agent=$('agent');
+const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;'}[c]));
+const now=()=>new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+function makeId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(36).slice(2)}
+let state={active:null,conversations:[]};
+try{const parsed=JSON.parse(localStorage.getItem(KEY));if(parsed&&Array.isArray(parsed.conversations))state=parsed}catch{}
+let trace=[];
+try{const parsed=JSON.parse(sessionStorage.getItem(TRACE_KEY));if(Array.isArray(parsed))trace=parsed.filter(x=>x&&typeof x==='object').slice(-120)}catch{}
+let fontScale=Number(localStorage.getItem('agentos-font-scale'))||1.2;
+function setFont(v){fontScale=Math.min(1.6,Math.max(.9,Math.round(v*10)/10));document.documentElement.style.setProperty('--font-scale',fontScale);localStorage.setItem('agentos-font-scale',String(fontScale))}
+setFont(fontScale);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){console.warn('Sauvegarde impossible',e)}}
+function current(){return state.conversations.find(c=>c.id===state.active)}
+function start(){const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
+function select(id){if(!state.conversations.some(c=>c.id===id))return;state.active=id;save();render();closeMenu()}
+function remove(id){const c=state.conversations.find(c=>c.id===id);if(!c||!confirm('Supprimer cette conversation locale ?'))return;state.conversations=state.conversations.filter(c=>c.id!==id);trace=trace.filter(e=>e.conversationId!==id);persistTrace();if(state.active===id)state.active=state.conversations[0]?.id??null;if(!state.active){start();return}save();render()}
+function closeMenu(){app.classList.remove('menu-open')}
+function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=document.createElement('div');row.className='thread'+(c.id===state.active?' active':'');const open=document.createElement('button');open.className='thread-title';open.style.cssText='flex:1;text-align:left;border:0;color:inherit;background:transparent;padding:0;cursor:pointer;font:inherit';open.textContent=c.title;open.title=c.title;open.onclick=()=>select(c.id);const del=document.createElement('button');del.className='delete-thread';del.textContent='×';del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);row.append(open,del);threads.append(row)}}
+function formatMarkdown(raw){
+  // Only a small, escaped Markdown subset: no HTML, remote images or arbitrary URLs.
+  const lines=String(raw??'').replace(/\r\n?/g,'\n').split('\n');
+  let out='',list=null,inCode=false,code=[];
+  const inline=x=>escapeHTML(x).replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_\n]+)__/g,'<strong>$1</strong>').replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  function closeList(){if(list){out+=`</${list}>`;list=null}}
+  for(const line of lines){
+    if(/^\s*```/.test(line)){closeList();if(inCode){out+='<pre><code>'+escapeHTML(code.join('\n'))+'</code></pre>';code=[];inCode=false}else inCode=true;continue}
+    if(inCode){code.push(line);continue}
+    if(!line.trim()){closeList();continue}
+    const h=line.match(/^(#{1,3})\s+(.+)$/);
+    if(h){closeList();out+='<h3>'+inline(h[2])+'</h3>';continue}
+    if(/^\s*---+\s*$/.test(line)){closeList();out+='<hr>';continue}
+    const item=line.match(/^\s*([-*]|\d+\.)\s+(.+)$/);
+    if(item){const type=/\d/.test(item[1])?'ol':'ul';if(list!==type){closeList();out+=`<${type}>`;list=type}out+='<li>'+inline(item[2])+'</li>';continue}
+    closeList();
+    if(line.startsWith('> ')){out+='<blockquote>'+inline(line.slice(2))+'</blockquote>';continue}
+    out+='<p>'+inline(line)+'</p>';
+  }
+  closeList();if(inCode)out+='<pre><code>'+escapeHTML(code.join('\n'))+'</code></pre>';
+  return out;
+}
+function render(){
+ const c=current();renderThreads();$('conversationTitle').textContent=c?.title?.toUpperCase()||'NOUVELLE CONVERSATION';feed.replaceChildren();
+ if(!c||c.messages.length===0){
+  feed.innerHTML=`<div class="empty"><div class="empty-kicker">/ TON ESPACE DE TRAVAIL</div><h1>Des idées.<br><em>Du concret.</em></h1><p>Écris ta demande, choisis un agent si besoin. Une interface brute, conçue pour penser et produire sans se perdre dans les menus.</p><div class="suggestions"><button class="suggestion" data-prompt="Conçois l’architecture de mon système multi-agents."><span>Concevoir une architecture</span><small>01 / RÉFLEXION ↗</small></button><button class="suggestion" data-prompt="Relis mon code et détecte les problèmes critiques."><span>Faire une review de code</span><small>02 / REVIEWER ↗</small></button><button class="suggestion" data-prompt="Crée un endpoint FastAPI pour exécuter une mission."><span>Écrire un endpoint API</span><small>03 / CODEUR ↗</small></button><button class="suggestion" data-prompt="Décompose mon objectif en tâches prioritaires."><span>Préparer un plan d’action</span><small>04 / ROUTEUR ↗</small></button></div></div>`;
+  feed.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{prompt.value=b.dataset.prompt;prompt.focus()}));renderTrace();return;
+ }
+ const wrap=document.createElement('div');wrap.className='conversation';
+ for(const m of c.messages){
+  const art=document.createElement('article');art.className='message '+(m.role==='user'?'user':'agent');
+  const role=document.createElement('div');role.className='message-role';role.textContent=m.role==='user'?'TOI':String(m.agent||'AGENT').toUpperCase();
+  const content=document.createElement('div');const txt=document.createElement('div');txt.className='message-content';
+  if(m.role==='user')txt.textContent=m.text;else txt.innerHTML=formatMarkdown(m.text);
+  content.append(txt);
+  if(m.metrics&&typeof m.metrics==='object'){const meta=document.createElement('div');meta.className='metrics';const vals=[];if(Number.isFinite(m.metrics.latency_ms))vals.push(`${(m.metrics.latency_ms/1000).toFixed(1)} s`);if(Number.isFinite(m.metrics.input_tokens))vals.push(`${m.metrics.input_tokens} tokens entrée`);if(Number.isFinite(m.metrics.output_tokens))vals.push(`${m.metrics.output_tokens} tokens sortie`);meta.textContent=vals.join(' · ');content.append(meta)}
+  const actions=document.createElement('div');actions.className='message-actions';const copy=document.createElement('button');copy.className='tiny-action';copy.textContent='COPIER ↗';copy.onclick=async()=>{try{await navigator.clipboard.writeText(m.text);copy.textContent='COPIÉ ✓'}catch{copy.textContent='COPIE IMPOSSIBLE'}};actions.append(copy);
+  if(m.role!=='user'){const details=document.createElement('button');details.className='tiny-action';details.textContent='ACTIVITÉ ↗';details.onclick=()=>toggleTrace(true);actions.append(details)}
+  content.append(actions);art.append(role,content);wrap.append(art)
+ }
+ feed.append(wrap);feed.scrollTop=feed.scrollHeight;renderTrace();
+}
+function persistTrace(){try{sessionStorage.setItem(TRACE_KEY,JSON.stringify(trace))}catch{}}
+const EVENT_TYPES=new Set(['message','started','completed','handoff','tool','error','info']);
+function recordEvent(e){
+ if(!e||!EVENT_TYPES.has(e.type))return false;
+ const event={id:makeId(),conversationId:String(e.conversationId||state.active||''),type:e.type,agent:String(e.agent||'SYSTÈME').slice(0,80),target:String(e.target||'').slice(0,80),detail:String(e.detail||'').slice(0,1000),time:now(),timestamp:Date.now()};
+ trace.push(event);trace=trace.slice(-120);persistTrace();renderTrace();return true;
+}
+function renderTrace(){
+ const scoped=trace.filter(e=>e.conversationId===state.active),nodes=$('traceNodes'),events=$('traceEvents');
+ const observed=[...new Set(scoped.filter(e=>e.type!=='message').flatMap(e=>[e.agent,...(e.type==='handoff'&&e.target?[e.target]:[]) ]))];
+ nodes.replaceChildren();
+ if(!observed.length){nodes.innerHTML='<p class="trace-empty">Aucun agent observé pour cette conversation.</p>'}
+ else for(const name of observed){const el=document.createElement('div');el.className='node active';const dot=document.createElement('span');dot.className='node-dot';const label=document.createElement('span');label.className='node-label';label.textContent=name;const kind=document.createElement('small');kind.textContent='OBSERVÉ';el.append(dot,label,kind);nodes.append(el)}
+ events.replaceChildren();
+ if(!scoped.length){events.innerHTML='<p class="trace-empty">Aucun événement pour le moment. Les appels d’outils et les délégations apparaîtront ici uniquement si ton backend les transmet.</p>';return}
+ for(const e of [...scoped].reverse()){const el=document.createElement('div');el.className='trace-event '+e.type;const name=document.createElement('div');name.className='trace-name';const names={message:'Message envoyé',started:'Exécution démarrée',completed:'Exécution terminée',handoff:'Délégation',tool:'Appel d’outil',error:'Erreur',info:'Information'};name.textContent=(names[e.type]||e.type)+' · '+e.agent;const time=document.createElement('div');time.className='trace-time';time.textContent=e.time;const desc=document.createElement('p');desc.textContent=(e.target?`→ ${e.target}. `:'')+e.detail;el.append(name,time,desc);events.append(el)}
+}
+function toggleTrace(force){const panel=$('tracePanel');const open=force===undefined?panel.hidden:force;panel.hidden=!open;$('traceToggle').classList.toggle('active',open);$('traceToggle').setAttribute('aria-expanded',String(open));if(open)renderTrace()}
+function appendMessage(e){
+ if(!e||!['user','assistant'].includes(e.role)||typeof e.text!=='string')return false;
+ const c=current();if(!c)return false;
+ c.messages.push({id:makeId(),role:e.role,agent:String(e.agent||'Agent'),text:e.text,metrics:e.metrics||null});
+ save();render();return true;
+}
+function submit(){
+ const value=prompt.value.trim();if(!value)return;let c=current();if(!c){start();c=current()}
+ if(c.messages.length===0)c.title=value.replace(/\s+/g,' ').slice(0,45)+(value.length>45?'…':'');
+ c.messages.push({id:makeId(),role:'user',agent:'toi',text:value});
+ recordEvent({type:'message',agent:'INTERFACE',detail:'Message enregistré localement. Aucun modèle appelé.'});
+ c.messages.push({id:makeId(),role:'assistant',agent:'Interface',text:'**Message enregistré localement.**\n\nAucun modèle n’est connecté à cette interface : aucune requête n’a été exécutée.\n\nOuvre **ACTIVITÉ** pour voir les événements réellement reçus. Le backend pourra ensuite envoyer des événements de délégation, d’outil et d’exécution.'});
+ prompt.value='';save();render();prompt.focus()
+}
+$('chatForm').addEventListener('submit',e=>{e.preventDefault();submit()});
+prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submit()}});
+$('newConversation').onclick=start;$('menuToggle').onclick=()=>app.classList.toggle('menu-open');
+$('fontUp').onclick=()=>setFont(fontScale+.1);$('fontDown').onclick=()=>setFont(fontScale-.1);
+$('traceToggle').onclick=()=>toggleTrace();$('traceClose').onclick=()=>toggleTrace(false);
+window.AgentOS={
+ // Temporary integration contract until the real backend API is established.
+ // Dispatch via real WebSocket/SSE handlers, not fabricated frontend timers.
+ receiveEvent:recordEvent,
+ receiveMessage:appendMessage,
+ getConversationId:()=>state.active,
+};
+if(!current())start();else render();
+})();
+</script>
+</body>
+</html>
