@@ -1,4 +1,4 @@
-"""CLI interactif : boucle prompt-toolkit + affichage rich des étapes du graphe.
+/"""CLI interactif : boucle prompt-toolkit + affichage rich des étapes du graphe.
 
 Usage :
     export LLM_BASE_URL=https://llm.mon-entreprise.example/v1

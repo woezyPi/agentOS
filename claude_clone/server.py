@@ -27,10 +27,13 @@ import webbrowser
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi import Path as PathParam
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
@@ -40,6 +43,7 @@ from claude_clone import tools as T
 from claude_clone import agent_tools as AT
 from claude_clone import config as CFG
 from claude_clone import models as MD
+from claude_clone import gateway as GW
 from claude_clone import skills as SK
 from claude_clone import web as WEB
 from claude_clone.agents import PERMISSIONS, READONLY_TOOLS, delete_user_agent, get_roles, load_custom_roles, role_temperature, save_user_agent
@@ -193,6 +197,8 @@ def expected_model(settings, key, panel: bool = False) -> str:
         m = roles[key].model or settings.agent_models.get(key) or settings.agent_models.get("reviewer", "")
     else:
         return ""
+    if getattr(settings, "free_only", False) and m not in {r["alias"] for r in GW.read_config()["routes"]}:
+        m = settings.worker_model
     return m.split("/")[-1]
 
 
@@ -250,7 +256,7 @@ def used_models(mark: int) -> list[str]:
     seen: dict = {}
     for r in TELEMETRY.records[mark:]:
         if r["kind"] == "llm" and not r.get("error"):
-            seen[(r["role"], r["model"].split("/")[-1])] = None
+            seen[(r["role"], (r.get("served_model") or r["model"]).split("/")[-1])] = None
     return [f"{role}: {model}" for role, model in seen][:8]
 
 
@@ -280,6 +286,7 @@ def _editor_uri(real: str, line: int) -> str:
 class Runtime:
     def __init__(self, graph=None, meta: dict | None = None):
         self.graph, self.meta, self.settings = graph, meta or {}, None
+        self.gateway_changing = False
         self.rebuild = None  # callable(settings) → graphe ; défini au démarrage réel (pas dans les tests à graphe injecté)
         self.busy: dict[str, float] = {}
         self.allow: dict[str, set] = {}
@@ -309,6 +316,7 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
     cfg = {"configurable": {"thread_id": tid, "mode": mode, "delegation": delegation, "agent_hint": "" if agent == "auto" else agent}, "recursion_limit": RECURSION_LIMIT}
     allow = rt.allow.setdefault(tid, set())
     mark = TELEMETRY.mark()
+    supervisor_model = None
     enc = lambda ev: json.dumps(ev, ensure_ascii=False) + "\n"
     try:
         yield enc({"type": "start", "thread_id": tid})
@@ -369,6 +377,9 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
                     if node.startswith("__"):
                         continue
                     if node == "supervisor":
+                        for message in (update or {}).get("messages", []):
+                            if isinstance(message, AIMessage):
+                                supervisor_model = message.response_metadata.get("model_name") or supervisor_model
                         last_calls = [tc for m in (update or {}).get("messages", []) if isinstance(m, AIMessage) for tc in m.tool_calls] or last_calls
                     for ev in node_events(node, update, streamed and node == "supervisor", lambda role, panel=False: expected_model(rt.settings, role, panel)):
                         yield enc(ev)
@@ -386,10 +397,10 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
             _, _, needs = triage(calls, snap.values, allow, auto)
             if needs:
                 yield enc({"type": "approval", "thread_id": tid, "calls": [_call_card(tc, snap.values, auto) for tc in needs]})
-                yield enc({"type": "done", "usage": TELEMETRY.summary(mark), "waiting": True, "context": context_info(snap.values, rt.settings), "models": used_models(mark)})
+                yield enc({"type": "done", "usage": TELEMETRY.summary(mark), "waiting": True, "context": context_info(snap.values, rt.settings), "models": used_models(mark), "supervisor_model": supervisor_model})
                 return
             decisions = {}  # tout est auto-approuvé (ou ne demande rien) : on enchaîne, les décisions seront posées en (1)
-        yield enc({"type": "done", "usage": TELEMETRY.summary(mark), "waiting": False, "context": context_info((await graph.aget_state(cfg)).values, rt.settings), "models": used_models(mark)})
+        yield enc({"type": "done", "usage": TELEMETRY.summary(mark), "waiting": False, "context": context_info((await graph.aget_state(cfg)).values, rt.settings), "models": used_models(mark), "supervisor_model": supervisor_model})
     except asyncio.CancelledError:
         raise
     except GraphRecursionError:
@@ -411,6 +422,8 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         if rt.graph is not None:  # graphe injecté (tests)
             yield
             return
+        if GW.enabled():
+            await asyncio.to_thread(GW.start)
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         from claude_clone.mcp_client import load_mcp_tools
         state_dir = Path.home() / ".claude_clone"
@@ -439,6 +452,12 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             raise HTTPException(401, "Jeton invalide ou absent")
 
     app = FastAPI(title="claude-clone", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    @app.exception_handler(RequestValidationError)
+    async def redact_gateway_validation(request: Request, exc: RequestValidationError):
+        if request.url.path == "/api/gateway":
+            return JSONResponse(status_code=422, content={"detail": [{"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()]})
+        return await request_validation_exception_handler(request, exc)
+
     api = dict(dependencies=[Depends(guard_token)])
     nostore = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
 
@@ -467,9 +486,21 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
     tool_objs = {t.name: t for t in (*[T.LOCAL_TOOLS_BY_NAME[n] for n in ("read_file", "grep", "glob")], AT.git_diff, WEB.fetch_url, WEB.latest_version,
                                      AT.sql_describe, AT.sql_query, AT.run_check)}
 
+    def model_metadata():
+        st = rt.settings
+        if st is None:
+            return {"role_models": {}, "model_routes": {}}
+        models = {"supervisor": st.supervisor_model, "coder": st.coder_model, "researcher": st.research_model, "worker": st.worker_model, **st.agent_models}
+        for key, role in get_roles().items():
+            if role.model:
+                known_aliases = {r["alias"] for r in GW.read_config()["routes"]} if st.free_only else None
+                models[key] = st.worker_model if known_aliases is not None and role.model not in known_aliases else role.model
+        routes = {r["alias"]: {"provider": r["provider"], "model": r["model"], "fallback": r.get("fallback")} for r in GW.read_config()["routes"]} if st.managed_gateway else {}
+        return {"role_models": models, "model_routes": routes, "free_only": st.free_only}
+
     @app.get("/api/meta", **api)
     async def meta():
-        return JSONResponse({"workdir": T.WORKDIR, "sandbox": T.sandbox_enabled(), "modes": ["challenge", "direct"],
+        return JSONResponse({**model_metadata(), "setup_required": bool(rt.settings and rt.settings.placeholder_fields()), "workdir": T.WORKDIR, "sandbox": T.sandbox_enabled(), "modes": ["challenge", "direct"],
                              "roles": [{"key": k, "title": r.title, "builtin": r.builtin} for k, r in get_roles().items()],
                              "readonly_tools": [{"name": n, "description": (tool_objs[n].description or "").strip().splitlines()[0][:110]} for n in READONLY_TOOLS if n in tool_objs],
                              "models": list(configured_models(rt.settings)) if rt.settings else [], **rt.meta}, headers=nostore)
@@ -479,6 +510,12 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
 
     @app.post("/api/chat", **api)
     async def chat(body: ChatIn):
+        if rt.gateway_changing:
+            raise HTTPException(409, "La connexion aux fournisseurs est en cours de modification. Réessaie dans quelques instants.")
+        if rt.settings and rt.settings.free_only and not GW.enabled():
+            raise HTTPException(409, "Budget 0 $ : active la passerelle gratuite dans Connexions avant d’envoyer une demande.")
+        if rt.settings and rt.settings.placeholder_fields():
+            raise HTTPException(422, "Configure les clés et les routes dans Connexions avant d’envoyer une demande.")
         check_agent(body.agent)
         if not rt.take(body.thread_id):
             raise HTTPException(409, "Un tour est déjà en cours pour cette conversation")
@@ -521,42 +558,71 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         src, titles = CFG.model_sources(), {"supervisor": "Superviseur", "coder": "Agent Codeur", "researcher": "Chercheur", "worker": "Workers (sous-agents temporaires)", **{k: r.title for k, r in get_roles().items() if r.builtin}}
         eff = {"supervisor": st.supervisor_model, "coder": st.coder_model, "researcher": st.research_model, "worker": st.worker_model, **st.agent_models}
         fb = {"supervisor": st.supervisor_fallbacks, "coder": st.coder_fallbacks, "researcher": st.research_fallbacks}
-        return {"roles": [{"key": k, "title": titles.get(k, k), "model": eff[k], "default": DEFAULTS[k], "source": src[k], "env": CFG.ENV_OF[k], "fallbacks": list(fb.get(k, st.agent_fallbacks))} for k in CFG.ASSIGNABLE],
-                "panel": {"models": list(st.panel_models), "default": CFG.DEFAULT_PANEL_MODELS.split(","), "source": src["panel"]},
-                "available": available, "error": err}
+        return {"roles": [{"key": k, "title": titles.get(k, k), "model": eff[k], "default": GW.role_aliases()[k] if st.managed_gateway else DEFAULTS[k], "source": src[k], "env": CFG.ENV_OF[k], "fallbacks": list(fb.get(k, st.agent_fallbacks))} for k in CFG.ASSIGNABLE],
+                "panel": {"models": list(st.panel_models), "default": (["agent_validation", "agent_recherche"] if st.free_only else ["worker", "worker_secours"]) if st.managed_gateway else CFG.DEFAULT_PANEL_MODELS.split(","), "source": src["panel"]},
+                "available": available, "error": err, "free_only": st.free_only, "routing": "litellm" if st.managed_gateway else "direct", "openrouter": urlparse(st.supervisor_base_url).hostname == "openrouter.ai"}
+
+    @app.get("/api/gateway", **api)
+    async def gateway_get():
+        return JSONResponse(await asyncio.to_thread(GW.status), headers=nostore)
+
+    async def change_gateway(operation, *args):
+        if rt.busy or rt.gateway_changing:
+            raise HTTPException(409, "Attends la fin des demandes en cours avant de modifier les connexions.")
+        rt.gateway_changing = True
+        try:
+            try:
+                result = await asyncio.to_thread(operation, *args)
+            except ValueError as exc:
+                rt.reload()
+                raise HTTPException(422, str(exc)) from None
+            rt.reload()
+            return JSONResponse(result, headers=nostore)
+        finally:
+            rt.gateway_changing = False
+
+    @app.put("/api/gateway", **api)
+    async def gateway_put(body: GW.GatewayConfig):
+        return await change_gateway(GW.configure, body)
+
+    @app.post("/api/gateway/start", **api)
+    async def gateway_start():
+        return await change_gateway(GW.activate)
+
+    @app.post("/api/gateway/stop", **api)
+    async def gateway_stop():
+        return await change_gateway(GW.deactivate)
 
     @app.get("/api/models", **api)
     async def models_get(refresh: bool = False):
         return JSONResponse(await models_view(refresh), headers=nostore)
 
+    @app.get("/api/models/catalog", **api)
+    async def models_catalog(source: Literal["configured", "openrouter"] = "configured", refresh: bool = False):
+        if source == "openrouter":
+            available, error = await MD.list_openrouter(refresh)
+        else:
+            available, error = await MD.list_available(rt.settings or CFG.load_settings(), refresh)
+        return JSONResponse({"available": available, "error": error}, headers=nostore)
+
     @app.put("/api/models", **api)
     async def models_put(body: ModelsIn):
-        st = rt.settings or CFG.load_settings()
-        ids = {m["id"] for m in (await MD.list_available(st))[0]}
-        src = CFG.model_sources()
         ov = CFG.read_model_overrides()
+        allowed = {r["alias"] for r in GW.read_config()["routes"]} if GW.enabled() or GW.read_config().get("free_only") else None
         for key, model in body.assignments.items():
             if key not in CFG.ASSIGNABLE:
                 raise HTTPException(422, f"Rôle inconnu : {key}")
-            if src[key] == "env":
-                raise HTTPException(409, f"« {key} » est fixé par la variable d'environnement {CFG.ENV_OF[key]} : retire-la pour le changer ici.")
-            if not CFG.MODEL_ID.match(model) or (ids and model not in ids):
-                raise HTTPException(422, f"Modèle non disponible sur la passerelle : {model}")
-            if model == DEFAULTS[key]:
-                ov.pop(key, None)
-            else:
-                ov[key] = model
+            if allowed is not None and model not in allowed:
+                raise HTTPException(422, "Choisis un alias LiteLLM ou ajoute une route dans Connexions.")
+            if not CFG.MODEL_ID.fullmatch(model):
+                raise HTTPException(422, f"Identifiant de modèle invalide : {model}")
+            ov[key] = model
         if body.panel is not None:
-            if src["panel"] == "env":
-                raise HTTPException(409, "Le panel est fixé par la variable d'environnement PANEL_MODELS.")
             if not 2 <= len(body.panel) <= 4 or len(set(body.panel)) != len(body.panel):
                 raise HTTPException(422, "Le panel doit contenir 2 à 4 modèles distincts.")
-            if any(not CFG.MODEL_ID.match(m) or (ids and m not in ids) for m in body.panel):
-                raise HTTPException(422, "Un modèle du panel n'est pas disponible sur la passerelle.")
-            if body.panel == CFG.DEFAULT_PANEL_MODELS.split(","):
-                ov.pop("panel", None)
-            else:
-                ov["panel"] = body.panel
+            if any(not CFG.MODEL_ID.fullmatch(m) or (allowed is not None and m not in allowed) for m in body.panel):
+                raise HTTPException(422, "Un identifiant de modèle du panel est invalide.")
+            ov["panel"] = body.panel
         CFG.write_model_overrides(ov)
         rt.reload()
         return JSONResponse(await models_view(), headers=nostore)
@@ -649,6 +715,8 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
     def agent_card(key, role) -> dict:
         agent_models = (rt.settings.agent_models if rt.settings else {}) or {}
         effective = role.model or (rt.settings.research_model if rt.settings and key == "researcher" else agent_models.get(key) or agent_models.get("reviewer", ""))
+        if rt.settings and rt.settings.free_only and effective not in {r["alias"] for r in GW.read_config()["routes"]}:
+            effective = rt.settings.worker_model
         return {"key": key, "title": role.title, "summary": role.summary, "description": role.description, "model": role.model, "effective_model": effective,
                 "tools": list(role.tools), "max_steps": role.max_steps, "temperature": role.temperature, "effective_temperature": role.temperature if role.temperature is not None else role_temperature(key),
                 "builtin": role.builtin, "editable": not role.builtin, "prompt": RESEARCH_PROMPT if key == "researcher" else role.prompt,
@@ -744,8 +812,7 @@ def cli() -> None:
     console = Console()
     settings = load_settings()
     if bad := settings.placeholder_fields():
-        console.print(f"[red]Configuration incomplète :[/red] {', '.join(bad)} (LLM_API_KEY ou CEGEDIM_LLM_API_KEY).")
-        raise SystemExit(2)
+        console.print("[yellow]Aucun fournisseur configuré : ouvre Connexions dans l’interface pour renseigner les clés.[/yellow]")
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         console.print("[bold yellow]Attention : serveur exposé hors de cette machine. Quiconque a le jeton peut exécuter des commandes et écrire des fichiers.[/bold yellow]")
     token = load_or_create_token(rotate=args.new_token)

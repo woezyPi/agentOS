@@ -4,3 +4,15 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Local API credentials and proxy state (examples remain versioned).
+.env.*
+!.env.example
+**/api key*
+**/api_key*
+**/credentials*.json
+*.key
+*.pem
+*.p12
+.claude_clone/
+.venv-*/

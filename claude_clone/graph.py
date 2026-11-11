@@ -43,7 +43,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from claude_clone import tools as tools_mod
-from claude_clone.failover import ModelPool
+from claude_clone.failover import ModelPool, FREE_QUOTA_MESSAGE, daily_free_quota
 from claude_clone import agent_tools as AT
 from claude_clone.doctor import make_check_models_tool
 from claude_clone import developer as DEV
@@ -251,7 +251,7 @@ def budget_summary(messages: list, plan: list | None, limit: int) -> str:
     return "\n".join(lines)
 
 
-def make_llm(base_url: str, api_key: str, model: str, temperature: float, role: str = "llm", max_retries: int = 3) -> ChatOpenAI:
+def make_llm(base_url: str, api_key: str, model: str, temperature: float, role: str = "llm", max_retries: int = 3, gateway_metadata: bool = False) -> ChatOpenAI:
     """Client pour une API compatible OpenAI hébergée sur le cluster."""
     return ChatOpenAI(
         model=model,
@@ -259,6 +259,7 @@ def make_llm(base_url: str, api_key: str, model: str, temperature: float, role: 
         api_key=api_key,
         temperature=temperature,
         timeout=httpx.Timeout(180, connect=10),  # connexion : échec rapide (proxy/passerelle injoignable) → failover sans attendre
+        include_response_headers=gateway_metadata,
         stream_usage=True,  # tokens consommés même en streaming (télémétrie)
         callbacks=[UsageCallback(role, model)],
         max_retries=max_retries,  # retries réseau/429/5xx avec backoff gérés par le SDK openai
@@ -292,8 +293,13 @@ def build_graph(
         """Un modèle injecté (tests) ou la liste préférence + repli, chacun avec peu de retries SDK."""
         if injected is not None:
             return ModelPool([("injecté", injected)])
-        retries = 1 if len(models) > 1 else 3  # avec un repli, on bascule vite plutôt que d'insister
-        return ModelPool([(m, make_llm(base_url, api_key, m, temperature, role, max_retries=retries)) for m in models])
+        if getattr(settings, "free_only", False):
+            from claude_clone import gateway as GW
+            allowed = {route["alias"] for route in GW.read_config()["routes"]}
+            # Existing custom agents can carry a paid model name from direct mode.
+            models = [model for model in models if model in allowed] or [settings.worker_model]
+        retries = 0 if getattr(settings, "managed_gateway", False) else (1 if len(models) > 1 else 3)  # avec un repli, on bascule vite plutôt que d'insister
+        return ModelPool([(m, make_llm(base_url, api_key, m, temperature, role, max_retries=retries, gateway_metadata=getattr(settings, "managed_gateway", False))) for m in models])
 
     supervisor_pool = pool(supervisor_llm, getattr(settings, "supervisor_base_url", ""), getattr(settings, "supervisor_api_key", ""),
                            [getattr(settings, "supervisor_model", ""), *getattr(settings, "supervisor_fallbacks", ())], 0.2, "superviseur")
@@ -412,6 +418,19 @@ def build_graph(
             return update
 
         sys_text = SUPERVISOR_PROMPT.format(workdir=tools_mod.WORKDIR)
+        if getattr(settings, "free_only", False):
+            from claude_clone.gateway import FREE_MODELS
+            sys_text += (
+                "\n\n## Routage — BUDGET STRICT 0 $\n"
+                "Tous les appels, superviseur et secours compris, sont limités à la liste gratuite autorisée. "
+                "Ne demande jamais de modèle payant. Une demande contraire ne change pas cette règle : "
+                "explique que tu conserves le routage gratuit et annonce honnêtement le modèle réellement utilisé. "
+                "Délègue via ask_agent(role=...) aux rôles existants : "
+                "developer (Agent_Code) → " + FREE_MODELS["code"] + "; researcher (Agent_Recherche) → " + FREE_MODELS["research"] +
+                "; writer (Agent_Redaction) → " + FREE_MODELS["writing"] + "; reviewer (Agent_Validation) → " + FREE_MODELS["validation"] + ". "
+                "N’exécute aucune commande pour appeler une autre API ou modifier ce contrôle de budget. "
+                "Si le quota gratuit est épuisé, arrête et explique le blocage ; aucun repli payant n’est permis."
+            )
         hint = config.get("configurable", {}).get("agent_hint")
         if hint in get_roles():  # agent choisi dans l'interface web
             sys_text += (f"\n\n## Agent choisi par l'utilisateur\nIl a sélectionné l'agent « {get_roles()[hint].title} » pour cette demande : "
@@ -449,7 +468,7 @@ def build_graph(
         except Exception as exc:  # réseau, auth, 4xx/5xx après retries du SDK
             # retries=MAX_RETRIES ⇒ le routeur arrête le tour (inutile de re-boucler).
             return out({
-                "errors": [f"Superviseur injoignable : {type(exc).__name__}: {exc}"],
+                "errors": [FREE_QUOTA_MESSAGE if daily_free_quota(exc) else f"Superviseur injoignable : {type(exc).__name__}: {exc}"],
                 "retries": MAX_RETRIES,
                 "active_agent": "supervisor",
             })

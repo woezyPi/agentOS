@@ -1,5 +1,5 @@
 """Offline visual checks with seeded UI data (no LLM calls or user sessions).
-Run: .venv/bin/python tests/test_visual.py [after]; screenshots: artifacts/ui/.
+Run: .venv/bin/python tests/test_visual.py [after] [--light]; screenshots: artifacts/ui/.
 """
 
 import sys
@@ -17,7 +17,9 @@ from playwright.sync_api import sync_playwright, expect
 
 
 def main():
-    phase = sys.argv[1] if len(sys.argv) > 1 else "after"
+    phase = next((arg for arg in sys.argv[1:] if not arg.startswith("--")), "after")
+    light = "--light" in sys.argv
+    capture = "day" if light else phase
     out = Path.cwd() / "artifacts/ui"
     out.mkdir(parents=True, exist_ok=True)
     client = TestClient(
@@ -187,8 +189,15 @@ def main():
             + json.dumps(json.dumps(state))
             + ");"
         )
+        if light:
+            page.add_init_script('localStorage.setItem("agentos-theme", "light");')
         page.goto("http://testserver")
         expect(page.locator("#status")).to_contain_text("CONNECTÉ")
+        if phase == "after":
+            close_box = page.locator("#sidebarClose").bounding_box()
+            tab_box = page.locator("#newTab").bounding_box()
+            assert abs((close_box["x"] + close_box["width"] / 2) -
+                       (tab_box["x"] + tab_box["width"] / 2)) <= 1, "Sidebar actions misaligned"
         if phase == "after":
             for selector, radius in [
                 (".message", "14px"),
@@ -209,28 +218,28 @@ def main():
                 "[...document.querySelectorAll('*')].every(e=>!getComputedStyle(e).backgroundImage.includes('gradient'))"
             )
         page.locator("#feed").evaluate("(e)=>e.scrollTop=0")
-        page.screenshot(path=str(out / f"{phase}-conversation.png"))
+        page.screenshot(path=str(out / f"{capture}-conversation.png"))
         page.locator(".agent-inspect").first.click()
         expect(page.locator("#agentInspector")).to_be_visible()
-        page.screenshot(path=str(out / f"{phase}-inspector.png"))
+        page.screenshot(path=str(out / f"{capture}-inspector.png"))
         for tab in ("logs", "files", "metrics", "activity"):
             page.locator(f'[data-inspector-tab="{tab}"]').click()
             expect(page.locator("#aiBody")).not_to_be_empty()
         page.locator('[data-inspector-tab="files"]').click()
         page.locator(".ai-file").first.click()
         expect(page.locator("#fileview")).to_be_visible()
-        page.screenshot(path=str(out / f"{phase}-file.png"))
+        page.screenshot(path=str(out / f"{capture}-file.png"))
         page.locator("#fvClose").click()
         page.locator("#aiClose").click()
         page.get_by_role("button", name="CÔTE À CÔTE", exact=True).click()
         expect(page.locator(".sbs")).to_be_visible()
         page.locator("#feed").evaluate("(e)=>e.scrollTop=e.scrollHeight")
-        page.screenshot(path=str(out / f"{phase}-diff.png"))
+        page.screenshot(path=str(out / f"{capture}-diff.png"))
         page.get_by_role("button", name="UNIFIÉ", exact=True).click()
         expect(page.locator("pre.pv")).to_be_visible()
         page.locator("#openStudio").click()
         expect(page.locator("#studio")).to_be_visible()
-        page.screenshot(path=str(out / f"{phase}-studio.png"))
+        page.screenshot(path=str(out / f"{capture}-studio.png"))
         page.locator("#studioClose").click()
         for w in (
             1920,
@@ -277,13 +286,13 @@ def main():
             ), f"Control compressed {w}"
             if w == 1262:
                 page.locator("#feed").evaluate("(e)=>e.scrollTop=e.scrollHeight")
-                page.screenshot(path=str(out / "responsive-report-desktop.png"))
+                page.screenshot(path=str(out / ("day-report-desktop.png" if light else "responsive-report-desktop.png")))
             if w == 390:
                 page.wait_for_function(
                     "() => document.querySelector('#sidebar').getBoundingClientRect().right <= 1"
                 )
                 page.locator("#feed").evaluate("(e)=>e.scrollTop=e.scrollHeight")
-                page.screenshot(path=str(out / f"{phase}-mobile.png"))
+                page.screenshot(path=str(out / f"{capture}-mobile.png"))
                 table = page.locator(".md table").first
                 assert table.evaluate("(e)=>e.scrollWidth > e.clientWidth")
                 assert table.evaluate("(e)=>{e.scrollLeft=100;return e.scrollLeft>0}")
@@ -308,7 +317,7 @@ def main():
                 page.wait_for_function(
                     "() => document.querySelector('#sidebar').getBoundingClientRect().right <= 1"
                 )
-                page.screenshot(path=str(out / "responsive-landscape.png"))
+                page.screenshot(path=str(out / ("day-landscape.png" if light else "responsive-landscape.png")))
         page.emulate_media(reduced_motion="reduce")
         if phase == "after":
             assert (

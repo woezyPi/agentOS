@@ -236,8 +236,14 @@ def test_models_api_and_named_status():
     from pathlib import Path
     import stat
     import claude_clone.config as CFG, claude_clone.models as MD
+    from claude_clone import gateway as GW
     from claude_clone.server import status_text, expected_model
-    root = Path(tempfile.mkdtemp(prefix="mod-")); old = (CFG.MODELS_FILE, MD.list_available); CFG.MODELS_FILE = root / "models.json"
+    root = Path(tempfile.mkdtemp(prefix="mod-")); old = (CFG.MODELS_FILE, MD.list_available, CFG._DOTENV_FILES, GW.STATE_DIR); CFG.MODELS_FILE = root / "models.json"
+    GW.STATE_DIR = root / "gateway"
+    model_env = (*CFG.ENV_OF.values(), "PANEL_MODELS")
+    saved_env = {name: os.environ.get(name) for name in model_env}
+    CFG._DOTENV_FILES = ()
+    for name in model_env: os.environ.pop(name, None)
     async def fake(settings, force=False):
         return [{"id": "a/m1", "window": 1000}, {"id": "b/m2", "window": 2000}, {"id": "c/m3", "window": None}, {"id": "d/m4", "window": 1}], None
     MD.list_available = fake
@@ -254,33 +260,67 @@ def test_models_api_and_named_status():
         assert rows["reviewer"]["model"] == "b/m2" and rows["reviewer"]["source"] == "modifié" and rows["supervisor"]["model"] == "a/m1" and rows["devops"]["source"] == "défaut"
         assert oct(stat.S_IMODE(CFG.MODELS_FILE.stat().st_mode)) == "0o600" and CFG.load_settings().agent_models["reviewer"] == "b/m2"
         assert expected_model(CFG.load_settings(), "reviewer") == "m2", "le statut affichera le NOUVEAU modèle"
-        # refus : modèle absent de la passerelle, rôle inconnu, identifiant invalide
-        for bad in ({"reviewer": "zzz/inexistant"}, {"hacker": "a/m1"}, {"reviewer": "a m1"}, {"reviewer": "../../etc/passwd"}):
+        # Un identifiant valide absent du catalogue reste configurable.
+        custom = c.put("/api/models", headers=H, json={"assignments": {"worker": "custom/model:free"}})
+        assert custom.status_code == 200 and CFG.load_settings().worker_model == "custom/model:free"
+        # refus : rôle inconnu, identifiant invalide
+        for bad in ({"hacker": "a/m1"}, {"reviewer": "a m1"}, {"reviewer": "../../etc/passwd"}):
             assert c.put("/api/models", headers=H, json={"assignments": bad}).status_code == 422, bad
-        # la variable d'environnement l'emporte : l'interface ne peut pas la contredire
+        # Le choix du front prime sur l’environnement ; réinitialiser restaure celui-ci.
         os.environ["DEVOPS_MODEL"] = "d/m4"
-        assert c.put("/api/models", headers=H, json={"assignments": {"devops": "a/m1"}}).status_code == 409
+        assert c.put("/api/models", headers=H, json={"assignments": {"devops": "a/m1"}}).status_code == 200
+        assert CFG.load_settings().agent_models["devops"] == "a/m1"
+        assert CFG.model_sources()["devops"] == "modifié"
+        c.post("/api/models/reset", headers=H, json={"keys": ["devops"]})
         assert {x["key"]: x["source"] for x in c.get("/api/models", headers=H).json()["roles"]}["devops"] == "env" and CFG.load_settings().agent_models["devops"] == "d/m4"
         del os.environ["DEVOPS_MODEL"]
         # panel : 2 à 4 modèles distincts, disponibles
         assert c.put("/api/models", headers=H, json={"panel": ["a/m1", "b/m2"]}).status_code == 200 and CFG.load_settings().panel_models == ("a/m1", "b/m2")
-        for bad in (["a/m1"], ["a/m1", "a/m1"], ["a/m1", "zzz/x"], ["a/m1", "b/m2", "c/m3", "d/m4", "a/m1"]):
+        for bad in (["a/m1"], ["a/m1", "a/m1"], ["a/m1", "bad model"], ["a/m1", "b/m2", "c/m3", "d/m4", "a/m1"]):
             assert c.put("/api/models", headers=H, json={"panel": bad}).status_code == 422, bad
         # réinitialiser : un rôle, puis tout
         r = c.post("/api/models/reset", headers=H, json={"keys": ["reviewer"]}).json(); rows = {x["key"]: x for x in r["roles"]}
         assert rows["reviewer"]["source"] == "défaut" and rows["supervisor"]["source"] == "modifié"
         r = c.post("/api/models/reset", headers=H, json={}).json(); assert all(x["source"] == "défaut" for x in r["roles"]) and r["panel"]["source"] == "défaut"
         assert c.put("/api/models", json={"assignments": {}}).status_code == 401 and c.post("/api/models/reset").status_code == 401
-        # remettre la valeur par défaut retire la surcharge (pas de fichier qui diverge pour rien)
-        c.put("/api/models", headers=H, json={"assignments": {"reviewer": "b/m2"}}); c.put("/api/models", headers=H, json={"assignments": {"reviewer": CFG.ROLE_DEFAULT_MODELS["reviewer"]}}) if CFG.ROLE_DEFAULT_MODELS["reviewer"] in {"a/m1", "b/m2", "c/m3", "d/m4"} else None
+        # Même la valeur par défaut est un choix explicite face à l’environnement.
+        os.environ["REVIEWER_MODEL"] = "env/model"
+        c.put("/api/models", headers=H, json={"assignments": {"reviewer": CFG.ROLE_DEFAULT_MODELS["reviewer"]}})
+        assert CFG.load_settings().agent_models["reviewer"] == CFG.ROLE_DEFAULT_MODELS["reviewer"]
+        c.post("/api/models/reset", headers=H, json={"keys": ["reviewer"]})
+        assert CFG.load_settings().agent_models["reviewer"] == "env/model"
+        del os.environ["REVIEWER_MODEL"]
+        os.environ["PANEL_MODELS"] = "env/one,env/two"
+        c.put("/api/models", headers=H, json={"panel": ["custom/one", "custom/two"]})
+        assert CFG.load_settings().panel_models == ("custom/one", "custom/two")
+        c.post("/api/models/reset", headers=H, json={"keys": ["panel"]})
+        assert CFG.load_settings().panel_models == ("env/one", "env/two")
+        del os.environ["PANEL_MODELS"]
         # statut NOMMÉ : qui travaille, avec quel modèle
         st = CFG.load_settings()
         txt = status_text("agents", [{"name": "ask_agent", "args": {"role": "reviewer"}}, {"name": "research", "args": {}}, {"name": "ask_agent", "args": {"role": "reviewer", "panel": True}}, {"name": "grep", "args": {}}], st)
         assert txt.startswith("En cours : Reviewer · ") and "Chercheur · " in txt and "Reviewer (panel) · 3 modèles" in txt and "grep" in txt, txt
         assert status_text("tools", [], st) == "Outils / sous-agents : en cours…" and expected_model(None, "reviewer") == ""
     finally:
-        CFG.MODELS_FILE, MD.list_available = old
-    print("✓ modèles : choix parmi les modèles disponibles (validé), fichier 600, rechargement à chaud, variable d'env prioritaire, panel, réinitialisation, statut nommé")
+        CFG.MODELS_FILE, MD.list_available, CFG._DOTENV_FILES, GW.STATE_DIR = old
+        for name, value in saved_env.items():
+            if value is None: os.environ.pop(name, None)
+            else: os.environ[name] = value
+    print("✓ modèles : identifiants libres, fichier 600, rechargement à chaud, front prioritaire, panel, réinitialisation, statut nommé")
+
+
+def test_daily_quota_notice():
+    import httpx, openai
+    class QuotaLLM(FakeLLM):
+        async def ainvoke(self, messages, **kwargs):
+            raise openai.RateLimitError("Rate limit exceeded: free-models-per-day", response=httpx.Response(429, request=httpx.Request("POST", "http://x")), body=None)
+    client = TestClient(create_app(token=TOKEN, hosts={"testserver"}, graph=build_graph(supervisor_llm=QuotaLLM([]), coder_llm=FakeLLM([]))), base_url="http://testserver")
+    events = ndjson(client, "/api/chat", json={"thread_id": tid(29), "message": "Bonjour"})
+    notices = [event["text"] for event in events if event["type"] == "notice"]
+    assert any(text.startswith("Quota quotidien OpenRouter épuisé") for text in notices), notices
+    assert not any("injoignable" in text or "RateLimitError" in text for text in notices), notices
+    assert events[-1]["type"] == "done"
+    print("✓ quota quotidien : explication lisible et fin du tour sans outil")
 
 
 def test_worker_cards_events():
@@ -379,6 +419,6 @@ def test_auto_diff_editor_and_turns():
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         d = os.path.realpath(d); os.chdir(d); T.set_workdir(d)
-        for t in (test_security, test_approval_flow, test_deny_flow, test_auto_and_always, test_agent_hint_and_events, test_token_file, test_context_and_compact, test_skills_api, test_registry_crud, test_panel_events, test_models_api_and_named_status, test_worker_cards_events, test_file_view, test_auto_diff_editor_and_turns):
+        for t in (test_security, test_approval_flow, test_deny_flow, test_auto_and_always, test_agent_hint_and_events, test_token_file, test_context_and_compact, test_skills_api, test_registry_crud, test_panel_events, test_models_api_and_named_status, test_daily_quota_notice, test_worker_cards_events, test_file_view, test_auto_diff_editor_and_turns):
             t()
     print("\nTous les tests serveur passent.")

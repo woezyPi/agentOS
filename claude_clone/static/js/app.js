@@ -6,6 +6,14 @@ const skillSel=$('skill'),ctxLine=$('ctxLine'),ctxText=$('ctxText'),ctxFill=$('c
 const app=$('app'),feed=$('feed'),threads=$('threads'),prompt=$('prompt'),agent=$('agent'),modeSel=$('mode'),deleg=$('delegation'),autoBox=$('auto'),sendBtn=$('send'),statusEl=$('status'),foot=$('foot');
 function makeId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():(Date.now().toString(16)+'-'+Math.random().toString(16).slice(2,10)).padEnd(12,'0')}
 
+// Shared outline icons keep the same size and stroke in static and live controls.
+const iconPaths={"chat":"M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z","skills":"m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z","copy":"M9 9h12v12H9z M15 5V3H3v12h2","close":"m6 6 12 12M6 18 18 6","sun":"M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4","arrow":"M7 17 17 7M7 7h10v10","send":"M12 19V5m-6 6 6-6 6 6","stop":"M6 6h12v12H6z","panel":"M3 4h18v16H3zM9 4v16","window":"M9 9h12v12H9zM15 5V3H3v12h2"};
+function icon(name){
+ const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),path=document.createElementNS(ns,'path');
+ for(const [key,value] of Object.entries({class:'ui-icon',viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.65','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(key,value);
+ path.setAttribute('d',iconPaths[name]);svg.append(path);return svg;
+}
+
 const themeKey='agentos-theme',themeToggle=$('themeToggle');
 function paintTheme(light){
  if(light)document.documentElement.dataset.theme='light';else delete document.documentElement.dataset.theme;
@@ -37,7 +45,7 @@ try{Object.assign(prefs,JSON.parse(localStorage.getItem(PREFS))||{})}catch{}
 agent.value=prefs.agent;modeSel.value=prefs.mode;deleg.value=prefs.delegation||'balanced';autoBox.checked=!!prefs.auto;
 if(agent.value!==prefs.agent)agent.value='auto';
 function savePrefs(){prefs={agent:agent.value,mode:modeSel.value,auto:autoBox.checked,delegation:deleg.value};try{localStorage.setItem(PREFS,JSON.stringify(prefs))}catch{}}
-agent.onchange=modeSel.onchange=deleg.onchange=savePrefs;
+agent.onchange=()=>{savePrefs();updateModelIndicator()};modeSel.onchange=deleg.onchange=savePrefs;
 const autoLabel=document.querySelector('label.auto');const paintAuto=()=>autoLabel.classList.toggle('on',autoBox.checked);paintAuto();
 autoBox.onchange=()=>{savePrefs();paintAuto();if(autoBox.checked)reevaluate()};
 function mergeStored(){let st=null;try{st=JSON.parse(localStorage.getItem(KEY))}catch{}
@@ -63,7 +71,8 @@ function progress(m){if(!m||!m.blocks)return null;const t=Math.floor((Date.now()
  if(direct.length)parts.push(direct.length+' outil'+(direct.length>1?'s':''));
  const ch=m.chars||0;if(ch>=400)parts.push('~'+(ch>=4000?Math.round(ch/400)/10+'k':Math.round(ch/4))+' tokens estimés'+(t>=3?' ('+Math.round(ch/4/t)+'/s)':''));
  if(!parts.length||(t<6&&!direct.length&&!ag.length&&!plan))return null;return{text:parts.join(' · '),pct}}
-function paintProgress(){document.querySelectorAll('.status-stats').forEach(e=>{const r=progress(liveM);e.textContent=r?r.text:'';const f=e.parentElement?.querySelector('.status-bar i');if(f)f.style.width=(r&&r.pct!==null?r.pct:0)+'%';const bar=e.parentElement?.querySelector('.status-bar');if(bar)bar.hidden=!(r&&r.pct!==null)})}
+function paintProgress(){const r=progress(liveM);document.querySelectorAll('.status-stats').forEach(e=>{const text=r?r.text:'';if(e.textContent!==text)e.textContent=text;const bar=e.parentElement?.querySelector('.status-bar'),fill=bar?.firstElementChild,visible=!!(r&&r.pct!==null),width=(visible?r.pct:0)+'%';if(fill&&fill.style.width!==width)fill.style.width=width;if(bar&&bar.hidden===visible)bar.hidden=!visible})}
+
 function paintStatusbar(){
   const sb=document.getElementById('statusbar');if(!sb)return;
   const parts=[];const c=current();const m=liveM||(c&&c.messages[c.messages.length-1]);
@@ -235,14 +244,35 @@ function stepSum(sum){const f=document.createDocumentFragment(),re=/(?:^|, )([A-
   hits.forEach((h,i)=>{const end=i+1<hits.length?hits[i+1].at:sum.length;if(i)f.append(' ');f.append(el('span','k',h.k+' '),el('span','v',sum.slice(h.vs,end)))});return f}
 const fmtDur=ms=>ms<1000?'<1 s':ms<60000?Math.round(ms/1000)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
 
+// Geometric role identities are stable across cards and inspector, separate from execution status.
+const agentIdentities={
+ architect:{path:'M12 3 21 8l-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5'},
+ developer:{path:'M4 4h10v10H4zM10 10h10v10H10zM7 17l10-10'},
+ reviewer:{path:'m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 5-4 4 4 4 4-4-4-4Z'},
+ researcher:{path:'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-9 8h18M12 3v18m-5-7 10-4'},
+ writer:{path:'M5 5h14M5 12h10M5 19h14M19 9v6'},
+ devops:{path:'M4 7h10l4 5-4 5H4l4-5-4-5Zm12-3 5 8-5 8'},
+ data:{path:'M4 15h4v6H4zM10 9h4v12h-4zM16 3h4v18h-4z'},
+ challenger:{path:'m8 3 6 9-6 9-6-9 6-9Zm8 0 6 9-6 9'},
+ worker:{path:'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z'}
+};
+for(const [key,value] of Object.entries(agentIdentities))iconPaths['agent-'+key]=value.path;
+function agentIdentity(block){const role=block.agent==='coder'?'developer':block.agent;const names=Object.keys(agentIdentities);if(role==='worker'&&block.label||!agentIdentities[role]){const key=(role||'agent')+':'+(block.label||'');let hash=0;for(const char of key)hash=(Math.imul(hash,31)+char.charCodeAt(0))|0;return names[(hash>>>0)%names.length]}return role}
+function agentMark(block){const mark=el('span','agent-mark');mark.dataset.agentIdentity=agentIdentity(block);mark.setAttribute('aria-hidden','true');mark.append(icon('agent-'+mark.dataset.agentIdentity));return mark}
+function shortModel(model){const full=modelDisplay(model);const parts=String(full||'').split(' · '),raw=parts.pop()||'',name=raw.split('/').pop(),free=name.endsWith(':free');const known={'north-mini-code:free':'North Mini Code','lfm-2.5-2.6b:free':'LFM 2.5 · 2.6B','gemma-4-31b-it:free':'Gemma 4 · 31B','nemotron-3-ultra-550b-a55b:free':'Nemotron Ultra · 550B'};return [...parts,known[name]||name.replace(/:free$/,''),free?'gratuit':''].filter(Boolean).join(' · ')}
+function agentActivity(block){const last=[...(block.steps||[])].reverse().find(step=>step.k==='tool');if(!last)return block.status==='run'?'Prépare sa prochaine action…':block.result?'Rapport disponible':'En attente de démarrage';const path=/(?:^|,\s*)path=([^,]+)/.exec(last.summary||'')?.[1]?.trim(),file=path?.split('/').pop();const actions={read_file:'Lit '+(file||'un fichier'),grep:'Recherche dans '+(path||'le projet'),glob:'Repère les fichiers du projet',scan_stack:'Analyse la structure du projet',git_diff:'Vérifie les modifications',execute_bash:'Exécute une commande',run_check:'Lance une vérification',fetch_url:'Consulte une page web',latest_version:'Vérifie une dépendance',write_file:'Écrit '+(file||'un fichier'),edit_file:'Modifie '+(file||'un fichier')};return actions[last.name]||last.name.replace(/_/g,' ')}
+function agentOverview(message,agents){const view=message.agentFilter||'all',run=agents.filter(a=>a.status==='run').length,ok=agents.filter(a=>a.status==='ok').length,err=agents.filter(a=>a.status==='error').length,wait=agents.length-run-ok-err;const box=el('div','orch');box.dataset.viewKey='overview';const summary=el('div','orch-summary');summary.append(el('span','orch-title',agents.length+' agent'+(agents.length>1?'s':'')),el('span','orch-counts',[run?run+' en cours':'',ok?ok+' terminé'+(ok>1?'s':''):'',err?err+' en échec':'',wait?wait+' en attente':''].filter(Boolean).join(' · ')));box.append(summary);
+ if(agents.length>1){const filters=el('nav','agent-filters');filters.setAttribute('aria-label','Filtrer les agents');for(const [value,title] of [['all','Tous'],['run','En cours'],['ok','Terminés'],['error','Erreurs']]){const button=el('button',view===value?'selected':'',title);button.type='button';button.setAttribute('aria-pressed',String(view===value));button.onclick=()=>{message.agentFilter=value;schedule()};filters.append(button)}box.append(filters)}return box}
+function agentVisible(block,message){const filter=message.agentFilter||'all';return filter==='all'||block.status===filter}
+
 // Inspecteur latéral : aucune requête supplémentaire, seules les données reçues sont affichées.
 let inspectedAgent=null,inspectorTab='activity';
 function openAgentInspector(block){inspectedAgent=block;inspectorTab='activity';$('agentInspector').hidden=false;refreshInspector()}
 function closeAgentInspector(){inspectedAgent=null;$('agentInspector').hidden=true}
 function refreshInspector(){
  const a=inspectedAgent,p=$('agentInspector');if(!a||!p||p.hidden)return;
- $('aiTitle').textContent=label(a.agent)+(a.label?' · '+a.label:'');
- $('aiSubtitle').textContent=[a.model,a.status==='run'?'EN COURS':a.status==='error'?'ÉCHEC':'TERMINÉ',a.start?fmtDur((a.end||Date.now())-a.start):''].filter(Boolean).join(' · ');
+ $('aiTitle').replaceChildren(agentMark(a),document.createTextNode(label(a.agent)+(a.label?' · '+a.label:'')));
+ $('aiSubtitle').textContent=[modelDisplay(a.model),a.status==='run'?'EN COURS':a.status==='error'?'ÉCHEC':'TERMINÉ',a.start?fmtDur((a.end||Date.now())-a.start):''].filter(Boolean).join(' · ');
  const area=$('aiBody');if(!area)return;
  const tabContent={activity:'ACTIVITÉ',logs:'LOGS',files:'FICHIERS',metrics:'PERFORMANCES'};
  p.querySelectorAll('[data-inspector-tab]').forEach(btn=>{btn.classList.toggle('selected',btn.dataset.inspectorTab===inspectorTab);btn.setAttribute('aria-selected',btn.dataset.inspectorTab===inspectorTab?'true':'false')});
@@ -267,7 +297,7 @@ function refreshInspector(){
    for(const f of matches){const btn=el('button','ai-file',f);btn.type='button';btn.onclick=()=>openFile(f,0);content.append(btn)}
  }else{
    add('ai-count','DURÉE',a.start?fmtDur((a.end||Date.now())-a.start):'Indisponible');
-   add('ai-count','MODÈLE',a.model||'Non communiqué');
+   add('ai-count','MODÈLE',modelDisplay(a.model)||'Non communiqué');
    add('ai-count','OUTILS',(a.steps||[]).filter(s=>s.k==='tool').length+'');
    add('ai-muted','TTFT / TOKENS PAR SECONDE','Non mesurés par appel LLM dans le protocole actuel. Instrumentation serveur requise.');
    add('ai-muted','CONTEXTE', 'Non disponible individuellement pour cet agent.');
@@ -279,11 +309,11 @@ $('agentInspector').querySelectorAll('[data-inspector-tab]').forEach(btn=>btn.on
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('agentInspector').hidden)closeAgentInspector()});
 function agentCard(b){
   const run=b.status==='run',st=run?'run':b.status==='error'?'err':'ok',steps=b.steps||[];
-  const card=el('section','agent-card '+st);
-  const head=el('header');const tg=el('button','ac-tg',b.expanded?'▾':'▸');tg.type='button';tg.title=b.expanded?'Masquer les détails':'Afficher les détails';tg.setAttribute('aria-expanded',b.expanded?'true':'false');head.append(tg,el('span','dot'),el('b','',label(b.agent)+(b.label?' · '+b.label:'')+(b.panel?' · PANEL':'')));if(b.panel)card.classList.add('wide');
-  if(b.model&&!b.panel)head.append(el('span','pill model',b.model));
+  const card=el('section','agent-card '+st+(b.expanded?' is-expanded':''));if(b.id)card.dataset.viewKey='agent-'+b.id;card.dataset.agentIdentity=agentIdentity(b);
+  const head=el('header');const tg=el('button','ac-tg',b.expanded?'▾':'▸');tg.type='button';tg.title=b.expanded?'Masquer les détails':'Afficher les détails';tg.setAttribute('aria-expanded',b.expanded?'true':'false');head.append(agentMark(b),el('b','',label(b.agent)+(b.label?' · '+b.label:'')+(b.panel?' · PANEL':'')));if(b.panel)card.classList.add('wide');
+  if(b.model&&!b.panel){const model=el('span','pill model',shortModel(b.model));model.title=modelDisplay(b.model);head.append(model)}
   const nTools=steps.filter(x=>x.k==='tool').length;
-  head.append(el('span','pill',(run?'EN COURS':st==='err'?'ÉCHEC':'TERMINÉ')+(nTools?' · '+nTools+' outil'+(nTools>1?'s':''):'')));
+  head.append(el('span','pill',(run?'● EN COURS':st==='err'?'! ÉCHEC':'✓ TERMINÉ')+(nTools?' · '+nTools+' outil'+(nTools>1?'s':''):'')));
   if(b.start)head.append(el('span','dur',fmtDur((b.end||Date.now())-b.start)));
   card.append(head);
   if(b.summary){const tk=cleanTask(b.summary);if(tk){const d=el('div','task',tk);d.title=tk;card.append(d)}}
@@ -301,13 +331,13 @@ function agentCard(b){
   if(run&&b.live){const lt=el('div','live-text'),inner=el('div');richText(inner,b.live);lt.append(inner);det.append(lt)}
   if(b.result){const d=el('details','report');d.open=b.open??true;d.ontoggle=()=>{b.open=d.open};d.append(el('summary','','RAPPORT'));const body=el('div','agent-body');const nm=/^\[Rapport du sous-agent[^\]\n]*\]\s*\n/.exec(b.result);if(nm)body.append(el('div','agent-note',nm[0].trim().replace(/^\[|\]$/g,'')));richText(body,nm?b.result.slice(nm[0].length):b.result);d.append(body);det.append(d)}
   if(b.expanded)card.append(det);
-  else if(run){const last=[...steps].reverse().find(x=>x.k==='tool');card.append(el('div','ac-peek',last?last.name+' '+(last.summary||''):'Réflexion…'))}
+  else{const peek=el('div','ac-peek',agentActivity(b)),last=[...steps].reverse().find(x=>x.k==='tool');peek.title=last?last.name+' '+(last.summary||''):peek.textContent;card.append(peek)}
   const flip=()=>{b.expanded=!b.expanded;schedule()};
   tg.onclick=e=>{e.stopPropagation();flip()};
-  const inspect=el('button','agent-inspect','INSPECTER ↗');inspect.type='button';
+  const inspect=el('button','agent-inspect','Inspecter');inspect.append(icon('arrow'));inspect.type='button';
   inspect.setAttribute('aria-label','Inspecter '+label(b.agent));
   inspect.onclick=e=>{e.stopPropagation();openAgentInspector(b)};
-  card.append(inspect);
+  tg.classList.add('agent-details');tg.replaceChildren(document.createTextNode(b.expanded?'Réduire':'Détails'));const footer=el('div','agent-footer');footer.append(tg,inspect);card.append(footer);
   head.classList.add('ac-head');head.onclick=e=>{if(e.target.closest('a,.fp,button'))return;openAgentInspector(b)};
   return card;
 }
@@ -318,7 +348,11 @@ function renderBlock(b,m){
       const d=el('details','blk narr fold');d.open=!!b.unfold;d.ontoggle=()=>{b.unfold=d.open};
       const sm=el('summary');sm.append(el('span','pv',flat.length>130?flat.slice(0,130).replace(/\s\S*$/,'')+'…':flat));d.append(sm);const body=el('div','fold-body');richText(body,b.text);d.append(body);return d}
     const d=el('div','blk'+(b.narr?' narr':''));richText(d,b.text);return d}
-  if(b.t==='notice'){const n=el('div','notice'+(b.level==='warn'?' warn':''),b.text);
+  if(b.t==='notice'){
+    const quota=/free-models-per-day|Quota quotidien OpenRouter épuisé/i.test(b.text||'');
+    const text=quota?'Quota quotidien OpenRouter épuisé pour les variantes gratuites (:free). Changer de variante :free ne rétablit pas ce quota. Attends sa réinitialisation, ou choisis un modèle auquel ton compte a accès.':b.text;
+    const n=el('div','notice'+(b.level==='warn'?' warn':''),text);
+    if(quota){const actions=el('div','choices'),models=el('button','choice','Choisir un modèle');models.type='button';models.onclick=()=>openStudio('models');actions.append(models);n.append(actions)}
     if(/^Budget d.étapes atteint/.test(b.text)){const go=el('button','choice','CONTINUER ↗');go.type='button';go.style.marginLeft='12px';go.disabled=busy;go.title='Reprend avec un nouveau budget d’étapes';go.onclick=()=>{if(!busy){prompt.value='continue';submit()}};n.append(go)}
     return n}
   if(b.t==='plan'){const d=el('div','plan');d.append(el('div','small-label','PLAN'));for(const t of b.todos){const r=el('div',t.status==='completed'?'done':t.status==='in_progress'?'doing':'todo',(t.status==='completed'?'✔ ':t.status==='in_progress'?'▶ ':'○ ')+t.content);d.append(r)}return d}
@@ -491,17 +525,17 @@ function whoLine(m,live){
   return w}
 function renderMessage(m){
   const art=el('article','message '+(m.role==='user'?'user':'agent'));if(m.id)art.dataset.mid=m.id;
-  const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m._old){art.classList.add('compacted');rl.append(el('small','','dans le résumé'))}if(m.role!=='user'&&supModel&&/^SUPERVISEUR$/i.test(m.agent||'SUPERVISEUR'))rl.append(el('small','',supModel));art.append(rl);
+  const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m._old){art.classList.add('compacted');rl.append(el('small','','dans le résumé'))}if(m.role!=='user'&&(m.model||supModel))rl.append(el('small','',modelDisplay(m.model||supModel)));art.append(rl);
   const content=el('div');const body=el('div','message-content');
-  if(m.role==='user'||!m.blocks){body.textContent=m.text||''}else{const agents=m.blocks.filter(b=>b.t==='tool'&&b.agent);if(agents.length){const pan=el('div','orch');const run=agents.filter(b=>b.status==='run').length,ok=agents.filter(b=>b.status==='ok').length,err=agents.filter(b=>b.status==='error').length,wait=agents.length-run-ok-err;pan.append(el('span','orch-title','SUPERVISEUR — '+agents.length+' WORKER'+(agents.length>1?'S':'')),el('span','orch-counts',(run?' '+run+' en cours':'')+(ok?' · '+ok+' terminé'+(ok>1?'s':''):'')+(err?' · '+err+' en échec':'')+(wait?' · '+wait+' en attente':'')));body.append(pan)}let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));const st=el('div','status-stats'),bar=el('div','status-bar');bar.hidden=true;bar.append(document.createElement('i'));sl.append(bar,st);body.append(sl)}}
+  if(m.role==='user'||!m.blocks){body.textContent=m.text||''}else{const agents=m.blocks.filter(b=>b.t==='tool'&&b.agent);if(agents.length){body.append(agentOverview(m,agents));if(!agents.some(a=>agentVisible(a,m)))body.append(el('p','agents-empty','Aucun agent dans cette catégorie.'))}let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;if(isAg&&!agentVisible(b,m))continue;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');grid.dataset.viewKey='agents-'+b.id;body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));const st=el('div','status-stats'),bar=el('div','status-bar');sl.dataset.viewKey='progress';const currentProgress=progress(m),visible=!!(currentProgress&&currentProgress.pct!==null),fill=document.createElement('i');bar.hidden=!visible;fill.style.width=(visible?currentProgress.pct:0)+'%';bar.append(fill);st.textContent=currentProgress?currentProgress.text:'';sl.append(bar,st);body.append(sl)}}
   content.append(body);
   if(m.role!=='user'&&m.blocks){const cv=current(),live=busy&&cv&&cv.messages[cv.messages.length-1]===m,w=whoLine(m,live);if(w){if(live)content.prepend(w);else content.append(w)}}
   if(m.role!=='user'&&m.usage)content.append(el('div','usage',m.usage));
   const text=m.role==='user'||!m.blocks?(m.text||''):m.blocks.filter(b=>b.t==='text'||(b.t==='tool'&&b.agent&&b.result)).map(b=>b.text||b.result).join('\n\n');
-  if(text){const actions=el('div','message-actions');const copy=el('button','tiny-action','COPIER ↗');copy.type='button';copy.onclick=async()=>{try{await navigator.clipboard.writeText(text);copy.textContent='COPIÉ ✓'}catch{copy.textContent='COPIE IMPOSSIBLE'}};actions.append(copy);content.append(actions)}
+  if(text){const actions=el('div','message-actions');const copy=el('button','tiny-action','Copier');copy.prepend(icon('copy'));copy.type='button';copy.onclick=async()=>{try{await navigator.clipboard.writeText(text);copy.textContent='COPIÉ ✓'}catch{copy.textContent='COPIE IMPOSSIBLE'}};actions.append(copy);content.append(actions)}
   art.append(content);return art;
 }
-function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=el('div','thread'+(c.id===state.active?' active':''));const open=el('button','thread-title',c.title);open.title=c.title;open.onclick=()=>select(c.id);const del=el('button','delete-thread','×');del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);const tab=el('button','delete-thread','⧉');tab.title='Ouvrir dans une nouvelle fenêtre';tab.setAttribute('aria-label','Ouvrir '+c.title+' dans une nouvelle fenêtre');tab.onclick=()=>openTab(c.id);row.append(open,tab,del);threads.append(row)}}
+function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=el('div','thread'+(c.id===state.active?' active':''));const open=el('button','thread-title',c.title);open.title=c.title;open.onclick=()=>select(c.id);const del=el('button','delete-thread');del.append(icon('close'));del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);const tab=el('button','delete-thread');tab.append(icon('window'));tab.title='Ouvrir dans une nouvelle fenêtre';tab.setAttribute('aria-label','Ouvrir '+c.title+' dans une nouvelle fenêtre');tab.onclick=()=>openTab(c.id);row.append(open,tab,del);threads.append(row)}}
 let stickNext=false;
 function render(){
   const c=current();renderThreads();$('conversationTitle').textContent=c?.title?.toUpperCase()||'NOUVELLE CONVERSATION';
@@ -512,7 +546,7 @@ function render(){
   {let u=0;for(const x of (c?c.messages:[])){if(x.role==='user')u++;x._old=u>0&&u<=oldTurns}}
   feed.replaceChildren();
   document.querySelector('.content').classList.toggle('wide',!!c&&c.messages.some(m=>m.blocks&&m.blocks.filter(b=>b.t==='tool'&&b.agent).length>=2));
-  sendBtn.textContent=busy?'STOP ■':'ENVOYER ↗';sendBtn.classList.toggle('stop',busy);
+  sendBtn.replaceChildren(document.createTextNode(busy?'STOP':'ENVOYER'),icon(busy?'stop':'send'));sendBtn.classList.toggle('stop',busy);
   if(!c||c.messages.length===0){
     feed.innerHTML=`<div class="empty"><div class="empty-kicker">/ TON ESPACE DE TRAVAIL</div><h1>Des idées.<br><em>Du concret.</em></h1><p>Écris ta demande, choisis un agent si besoin. Une interface brute, conçue pour penser et produire sans se perdre dans les menus.</p><div class="suggestions"><button class="suggestion" data-agent="architect" data-prompt="Conçois l’architecture de mon système multi-agents."><span>Concevoir une architecture</span><small>01 / RÉFLEXION ↗</small></button><button class="suggestion" data-agent="reviewer" data-prompt="Relis mon code et détecte les problèmes critiques."><span>Faire une review de code</span><small>02 / REVIEWER ↗</small></button><button class="suggestion" data-agent="developer" data-prompt="Crée un endpoint FastAPI pour exécuter une mission."><span>Écrire un endpoint API</span><small>03 / CODEUR ↗</small></button><button class="suggestion" data-agent="auto" data-prompt="Décompose mon objectif en tâches prioritaires."><span>Préparer un plan d’action</span><small>04 / ROUTEUR ↗</small></button></div></div>`;
     feed.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{prompt.value=b.dataset.prompt;agent.value=b.dataset.agent;savePrefs();prompt.focus()}));return}
@@ -531,15 +565,16 @@ function reconcileDom(oldNode,newNode){
   if(oldNode.nodeType!==Node.ELEMENT_NODE)return oldNode;
   const focused=oldNode===document.activeElement;
   const detailOpen=oldNode.tagName==='DETAILS'?oldNode.open:null;
-  if(!focused){
-    for(const a of [...oldNode.attributes])if(!newNode.hasAttribute(a.name))oldNode.removeAttribute(a.name);
-    for(const a of [...newNode.attributes])if(a.name!=='open'&&oldNode.getAttribute(a.name)!==a.value)oldNode.setAttribute(a.name,a.value);
-  }
+  for(const a of [...oldNode.attributes])if(!(focused&&a.name==='value')&&!newNode.hasAttribute(a.name))oldNode.removeAttribute(a.name);
+  for(const a of [...newNode.attributes])if(a.name!=='open'&&!(focused&&a.name==='value')&&oldNode.getAttribute(a.name)!==a.value)oldNode.setAttribute(a.name,a.value);
   if(oldNode.tagName==='INPUT'||oldNode.tagName==='TEXTAREA')return oldNode;
   const incomingChildren=[...newNode.childNodes];
   let i=0;
   while(i<incomingChildren.length){
-    const incoming=incomingChildren[i],existing=oldNode.childNodes[i];
+    const incoming=incomingChildren[i];let existing=oldNode.childNodes[i];
+    const key=incoming.nodeType===Node.ELEMENT_NODE?incoming.dataset.viewKey:null;
+    if(key&&existing?.dataset?.viewKey!==key){const match=[...oldNode.children].find(child=>child.dataset.viewKey===key);if(match){oldNode.insertBefore(match,existing||null);existing=match}else{oldNode.insertBefore(incoming,existing||null);i++;continue}}
+    else if(!key&&existing?.dataset?.viewKey){oldNode.insertBefore(incoming,existing);i++;continue}
     if(!existing){oldNode.append(incoming);i++;continue}
     reconcileDom(existing,incoming);i++;
   }
@@ -597,7 +632,7 @@ function handle(ev,m){
     case 'notice':m.blocks.push({t:'notice',level:ev.level,text:ev.text});if(/^Contexte compacté/.test(ev.text||''))refreshCtx(true);break;
     case 'auto':if(ev.preview){closeText(m);m.blocks.push({t:'approval',calls:[{id:ev.id||('auto-'+Date.now()),name:ev.name,summary:ev.summary,preview:ev.preview}],choices:{},resolved:true,auto:true,decided:{}})}else m.blocks.push({t:'notice',level:'info',text:'⚡ auto : '+ev.name+'('+ev.summary+') — '+ev.why});break;
     case 'approval':closeText(m);m.blocks.push({t:'approval',calls:ev.calls,choices:{},resolved:false});break;
-    case 'done':m.usage=(ev.usage||'')+((ev.models||[]).length?' · modèles : '+ev.models.join(' · '):'');m.status='';if(ev.context)paintCtx(ev.context);break;
+    case 'done':if(ev.supervisor_model)m.model=ev.supervisor_model;m.usage=(ev.usage||'')+((ev.models||[]).length?' · modèles : '+ev.models.join(' · '):'');m.status='';if(ev.context)paintCtx(ev.context);break;
     case 'error':m.blocks.push({t:'notice',level:'warn',text:'Erreur : '+ev.text});m.status='';break;
   }
 }
@@ -618,7 +653,7 @@ function submit(){
   const value=prompt.value.trim();if(!value)return;let c=current();if(!c){start();c=current()}
   if(c.messages.length===0)c.title=value.replace(/\s+/g,' ').slice(0,45)+(value.length>45?'…':'');
   c.messages.push({id:makeId(),role:'user',text:value});
-  const m={id:makeId(),role:'assistant',agent:agent.value==='auto'?'Superviseur':label(agent.value),blocks:[],status:'Réflexion…'};c.messages.push(m);
+  const m={id:makeId(),role:'assistant',model:modelDisplay(configuredModel()),agent:agent.value==='auto'?'Superviseur':label(agent.value),blocks:[],status:'Réflexion…'};c.messages.push(m);
   prompt.value='';stickNext=true;save();run('/api/chat',body(c,{message:value}),m);
 }
 function resume(m,b){
@@ -646,7 +681,7 @@ async function loadSkills(){const list=$('skillList');skillSel.querySelectorAll(
   try{const r=await api('/api/skills');if(!r.ok){msg(r.status===404?'indisponible — relance cc-web':'erreur '+r.status);return}
     const {skills,warnings}=await r.json();list.replaceChildren();
     if(!skills.length)msg('aucun skill');
-    for(const s of skills){const b=document.createElement('button');b.type='button';b.title=s.description;const sym=el('span','nav-symbol','✦');b.append(sym,' '+s.name);b.onclick=()=>useSkill(s.name);list.append(b);
+    for(const s of skills){const b=document.createElement('button');b.type='button';b.title=s.description;const sym=el('span','nav-symbol');sym.append(icon('skills'));b.append(sym,' '+s.name);b.onclick=()=>useSkill(s.name);list.append(b);
       const o=document.createElement('option');o.value=s.name;o.textContent=s.name.toUpperCase();o.title=s.description;skillSel.append(o)}
     for(const w of warnings||[]){const b=el('button','','⚠ '+w);b.type='button';b.disabled=true;b.style.cssText='opacity:.7;color:var(--pink);font-size:10px';list.append(b)}
   }catch{msg('indisponible')}}
@@ -654,10 +689,15 @@ skillSel.onchange=()=>{const n=skillSel.value;if(!n)return;useSkill(n);skillSel.
 function setStatus(ok,text){statusEl.textContent=ok?'● CONNECTÉ':'● HORS LIGNE';statusEl.className='status '+(ok?'ok':'bad');if(text)foot.innerHTML=text}
 
 // --- méta (rôles) : le sélecteur d'agent suit la liste réelle, agents personnalisés compris ---
-let metaCache={readonly_tools:[],models:[]};
+let metaCache={readonly_tools:[],models:[]},connectionSetupShown=false;
+function configuredModel(){return (metaCache.role_models||{})[agent.value==='auto'?'supervisor':agent.value]||supModel||''}
+function modelDisplay(model){const routes=metaCache.model_routes||{};let route=routes[model];if(!route&&typeof model==='string'){const matches=Object.values(routes).filter(r=>r.model===model||r.model.split('/').pop()===model||model.endsWith('/'+r.model)),unique=new Map(matches.map(r=>[r.provider+'/'+r.model,r]));if(unique.size===1)route=unique.values().next().value}return route?({deepseek:'DeepSeek',openrouter:'OpenRouter',groq:'Groq',cerebras:'Cerebras',ollama:'Ollama'}[route.provider]||route.provider)+' · '+route.model:model}
+
+function updateModelIndicator(){const model=configuredModel(),button=$('activeModel');$('activeModelName').textContent=(metaCache.free_only?'0 $ · ':'')+(model?modelDisplay(model):'Modèles');button.title=model?'Modèle configuré : '+modelDisplay(model)+' · modifier les modèles':'Configurer les modèles'}
+
 function applyMeta(meta){metaCache=meta;for(const k of Object.keys(roleTitles))if(k!=='coder')delete roleTitles[k];for(const x of meta.roles||[])roleTitles[x.key]=x.title;roleTitles.worker='Worker';
   const cur=agent.value;agent.replaceChildren(...[['auto','AUTO / SUPERVISEUR'],...(meta.roles||[]).map(x=>[x.key,x.title.toUpperCase()])].map(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;return o}));
-  agent.value=[...agent.options].some(o=>o.value===cur)?cur:'auto'}
+  agent.value=[...agent.options].some(o=>o.value===cur)?cur:'auto';updateModelIndicator()}
 async function refreshRoles(){try{const r=await api('/api/meta');if(r.ok)applyMeta(await r.json())}catch{}}
 
 // --- Studio : créer / modifier / supprimer skills et agents ---
@@ -670,12 +710,16 @@ studio.querySelectorAll('.studio-tabs button').forEach(b=>b.onclick=()=>{sTab=b.
 $('studioClose').onclick=closeStudio;studio.addEventListener('click',e=>{if(e.target===studio)closeStudio()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!studio.hidden)closeStudio()});
 $('openStudio').onclick=()=>{openStudio();closeMenu()};
+$('openModels').onclick=()=>{openStudio('models');closeMenu()};
+$('activeModel').onclick=()=>openStudio('models');
+$('openConnections').onclick=()=>{openStudio('connections');closeMenu()};
 const lbl=t=>el('label','lbl',t);
 function inp(type,val,dis){const i=document.createElement('input');i.type=type;i.value=val??'';i.disabled=!!dis;return i}
 function ta(val,dis,tall){const t=document.createElement('textarea');t.value=val??'';t.disabled=!!dis;if(tall)t.className='tall';return t}
 function detailMsg(j,status){const d=j&&j.detail;return d?(typeof d==='string'?d:d.map(x=>((x.loc||[]).slice(-1)[0]||'champ')+' : '+x.msg).join('\n')):'Erreur '+status}
 async function loadStudioList(select){
   if(sTab==='models')return modelsPane();
+  if(sTab==='connections')return gatewayPane();
   studioList.replaceChildren();studioForm.replaceChildren();
   const nb=el('button','choice new','＋ NOUVEAU');nb.type='button';nb.onclick=()=>{sSel='__new__';[...studioList.querySelectorAll('.item')].forEach(x=>x.classList.remove('active'));showForm(null)};studioList.append(nb);
   try{
@@ -696,38 +740,126 @@ async function put(url,payload,msg){msg.className='studio-msg';msg.textContent='
 async function del(url,msg,what){if(!confirm(what))return false;try{const r=await api(url,{method:'DELETE'});const j=await r.json().catch(()=>({}));if(!r.ok){msg.textContent=detailMsg(j,r.status);return false}return j}catch(e){msg.textContent='Connexion impossible : '+e.message;return false}}
 
 
-// --- Studio · MODÈLES : choisir le modèle de chaque agent parmi ceux réellement disponibles sur la passerelle ---
+// --- Connexions : private provider keys and routing aliases for the local LiteLLM gateway. ---
+async function gatewayPane(){
+ studioList.replaceChildren();studioForm.replaceChildren();
+ studioList.append(el('p','studio-note','AgentOS → LiteLLM local → fournisseurs. Le superviseur et les workers appellent des alias ; LiteLLM choisit le fournisseur et gère les modèles de secours.'));
+ studioList.append(el('p','studio-note','Deux variantes gratuites OpenRouter partagent leur quota quotidien. Pour un secours indépendant, choisis un autre fournisseur. Un modèle payant peut entraîner des frais.'));
+ let data;try{const response=await api('/api/gateway');if(!response.ok)throw new Error('HTTP '+response.status);data=await response.json()}catch(error){studioForm.append(el('p','studio-msg','Connexion impossible : '+error.message));return}
+ const heading=el('div','gateway-heading');heading.append(el('h2','','Passerelle LiteLLM'),el('span','gateway-state',data.free_only?(data.enabled&&data.running?'Budget 0 $ actif':'Budget 0 $ · à activer'):(data.enabled?(data.running?'Active':'Activée · arrêtée'):'Connexion directe')));studioForm.append(heading);
+ studioForm.append(el('p','studio-note',data.installed?'LiteLLM est installé. Adresse locale : '+data.url:'Installe la passerelle avec cc-gateway --install, puis actualise ce panneau.'));
+ const providers={deepseek:'DeepSeek',openrouter:'OpenRouter',groq:'Groq',cerebras:'Cerebras',ollama:'Ollama local'};
+ const budgetWrap=el('label','gateway-budget'),budget=inp('checkbox','');budget.checked=!!data.free_only;budgetWrap.append(budget,el('b','','Budget strict 0 $ — superviseur et secours compris'));studioForm.append(budgetWrap);
+ studioForm.append(el('p','catalog-note','Ce mode accepte uniquement la liste gratuite autorisée. Les clés payantes sont conservées localement, mais ne sont pas transmises au proxy.'));
+
+ studioForm.append(el('div','mhead','CLÉS DES FOURNISSEURS'));
+ const keyFields={};
+ for(const [provider,title] of Object.entries(providers)){if(provider==='ollama')continue;const wrap=el('label','gateway-key');wrap.append(el('span','',title),el('small','',data.keys[provider]?'Clé disponible · laisser vide pour conserver':'Clé non renseignée'));const input=inp('password','');input.autocomplete='new-password';input.placeholder=data.keys[provider]?'Clé déjà configurée':'Clé API '+title;input.setAttribute('aria-label','Clé API '+title);wrap.append(input);studioForm.append(wrap);keyFields[provider]=input}
+ studioForm.append(el('div','mhead','ROUTES ET MODÈLES DE SECOURS'));
+ studioForm.append(el('p','catalog-note','Le fournisseur et l’identifiant définissent la destination de chaque alias. Exemple OpenRouter : nvidia/nom-du-modele:free ; exemple DeepSeek : deepseek-flash.'));
+ const routeList=el('div','gateway-routes');studioForm.append(routeList);const routes=[];
+ function select(label,options){const control=document.createElement('select');control.setAttribute('aria-label',label);for(const [value,text] of options){const option=document.createElement('option');option.value=value;option.textContent=text;control.append(option)}return control}
+ function fallbacks(){for(const row of routes){const current=row.fallback.value;row.fallback.replaceChildren();for(const value of ['',...routes.filter(other=>other!==row).map(other=>other.alias.value)]){const option=document.createElement('option');option.value=value;option.textContent=value||'Aucun secours';row.fallback.append(option)}row.fallback.value=[...row.fallback.options].some(option=>option.value===current)?current:''}}
+ function addRoute(route){const card=el('div','gateway-route'),alias=inp('text',route.alias),provider=select('Fournisseur de '+route.alias,Object.entries(providers)),model=inp('text',route.model),fallback=select('Secours de '+route.alias,[['','Aucun secours']]);provider.value=route.provider;const core=['superviseur','worker','worker_secours','agent_code','agent_recherche','agent_redaction','agent_validation'].includes(route.alias);alias.readOnly=core;alias.setAttribute('aria-label','Alias '+route.alias);model.setAttribute('aria-label','Modèle de '+route.alias);model.spellcheck=false;model.autocomplete='off';
+  const title=el('div','gateway-route-title');title.append(alias);if(!core)title.append(btn('Supprimer','tiny-action',()=>{routes.splice(routes.indexOf(row),1);card.remove();fallbacks()}));card.append(title);
+  for(const [label,control] of [['Fournisseur',provider],['Modèle',model],['Secours',fallback]]){const wrap=el('label','gateway-field');wrap.append(el('span','',label),control);card.append(wrap)}
+  const row={alias,provider,model,fallback};routes.push(row);routeList.append(card);alias.onchange=fallbacks;fallbacks();return row}
+ for(const route of data.routes)addRoute(route);
+ for(let i=0;i<routes.length;i++)routes[i].fallback.value=data.routes[i].fallback||'';
+ budget.onchange=()=>{if(budget.checked&&data.free_routes){routes.length=0;routeList.replaceChildren();for(const route of data.free_routes)addRoute(route);for(let i=0;i<routes.length;i++)routes[i].fallback.value=data.free_routes[i].fallback||''}};
+
+ studioForm.append(btn('Ajouter une route','choice',()=>addRoute({alias:'route_'+(routes.length+1),provider:'openrouter',model:''})));
+ const msg=el('div','studio-msg');msg.setAttribute('role','status');let saving=false;
+ async function save(activate){if(saving)return;saving=true;saveBtn.disabled=startBtn.disabled=true;
+  const payload={free_only:budget.checked,routes:routes.map(row=>({alias:row.alias.value.trim(),provider:row.provider.value,model:row.model.value.trim(),fallback:row.fallback.value||null})),keys:{}};
+  for(const [provider,input] of Object.entries(keyFields))if(input.value.trim())payload.keys[provider]=input.value.trim();
+  try{if(!await put('/api/gateway',payload,msg))return;for(const input of Object.values(keyFields))input.value='';
+   if(activate){msg.textContent='Démarrage de LiteLLM…';const response=await api('/api/gateway/start',{method:'POST'});if(!response.ok){msg.textContent=detailMsg(await response.json().catch(()=>({})),response.status);return}}
+   flash=activate?'LiteLLM est actif. Les prochains appels passent par la passerelle.':'Configuration enregistrée.';await gatewayPane();init();
+  }catch(error){msg.className='studio-msg';msg.textContent='Connexion impossible : '+error.message}
+  finally{saving=false;saveBtn.disabled=startBtn.disabled=false}
+ }
+ const saveBtn=btn('Enregistrer la configuration','choice',()=>save(false)),startBtn=btn('Enregistrer et activer LiteLLM','send',()=>save(true));startBtn.disabled=!data.installed;
+ const direct=btn('Revenir à la connexion directe','choice',async()=>{msg.textContent='Retour à la connexion directe…';try{const response=await api('/api/gateway/stop',{method:'POST'});if(!response.ok){msg.textContent=detailMsg(await response.json().catch(()=>({})),response.status);return}flash='Connexion directe rétablie ; les anciens choix de modèles sont conservés.';await gatewayPane();init()}catch(error){msg.textContent=error.message}});direct.disabled=!data.enabled||!!data.free_only;
+ actions(msg,[saveBtn,startBtn,direct,btn('Actualiser','tiny-action',()=>gatewayPane())]);
+}
+
+// --- Studio · MODÈLES : suggestions du fournisseur et identifiants libres ---
 async function modelsPane(force){
   studioList.replaceChildren();studioForm.replaceChildren();
-  studioList.append(el('p','studio-note','Choisis le modèle de chaque agent parmi ceux réellement disponibles sur la passerelle. Les modèles de repli (bascule automatique) ne changent pas.'));
-  const rf=btn('↻ ACTUALISER LA LISTE','choice',()=>modelsPane(true));rf.style.marginTop='10px';studioList.append(rf);
+  studioList.append(el('p','studio-note','Choisis ou saisis le modèle de chaque agent. Les suggestions viennent de ton fournisseur ; tu peux aussi entrer un identifiant complet, par exemple fournisseur/modele. Les modèles de repli restent inchangés.'));
+  studioList.append(btn('Configurer LiteLLM','choice',()=>openStudio('connections')));
   let j;try{const r=await api('/api/models'+(force?'?refresh=true':''));if(!r.ok)throw new Error('HTTP '+r.status);j=await r.json()}catch(e){studioForm.append(el('div','studio-msg','Chargement impossible : '+e.message));return}
   metaCache.available=j.available||[];const avail=metaCache.available;
-  const fmt=m=>m.id+(m.window?'  ('+Math.round(m.window/1000)+' k)':'');
-  function picker(cur,disabled,optional){
-    if(!avail.length)return inp('text',cur,disabled);
-    const sel=document.createElement('select');if(optional){const o=document.createElement('option');o.value='';o.textContent='(aucun)';sel.append(o)}
-    for(const m of avail){const o=document.createElement('option');o.value=m.id;o.textContent=fmt(m);sel.append(o)}
-    if(cur&&!avail.some(m=>m.id===cur)){const o=document.createElement('option');o.value=cur;o.textContent=cur+'  (hors liste)';sel.append(o)}
-    sel.value=cur||'';sel.disabled=!!disabled;return sel}
+  const suggestions=document.createElement('datalist');suggestions.id='availableModels';
+  for(const m of avail){const option=document.createElement('option');option.value=m.id;option.label=m.window?Math.round(m.window/1000)+' k tokens':m.id;suggestions.append(option)}
+  studioForm.append(suggestions);
+  function picker(cur,optional){
+    const input=inp('text',cur);input.setAttribute('list','availableModels');input.autocomplete='off';input.spellcheck=false;
+    input.placeholder=optional?'Facultatif — fournisseur/modele':'fournisseur/modele';return input}
   const msg=el('div','studio-msg');
   if(j.error)studioForm.append(el('p','studio-note',j.error+' — liste des modèles indisponible : saisie libre.'));
-  studioForm.append(el('div','mhead','MODÈLE PAR AGENT'));
+  const assignmentsHeading=el('div','mhead','MODÈLE PAR AGENT');studioForm.append(assignmentsHeading);
   const rows=[];
   for(const r of j.roles){const row=el('div','mrow');const nm=el('div','nm',r.title);nm.append(el('small','',r.key+(r.default!==r.model?' · défaut : '+r.default.split('/').pop():'')));
-    const ctl=picker(r.model,r.source==='env');if(r.source==='env')ctl.title='Fixé par la variable d’environnement '+(r.env||'')+' : retire-la pour le changer ici';
+    if(j.routing==='litellm')nm.append(el('small','',modelDisplay(r.model)));
+    const ctl=picker(r.model);ctl.setAttribute('aria-label','Modèle — '+r.title);
     row.append(nm,ctl,el('div','src '+(r.source==='modifié'?'mod':r.source==='env'?'env':''),r.source==='env'?'VARIABLE D’ENV':r.source.toUpperCase()));studioForm.append(row);rows.push([r,ctl])}
   studioForm.append(el('div','mhead','PANEL DE REVUE (2 à 4 relecteurs de familles différentes)'));
   const pctl=[],pv=j.panel.models;
-  for(let i=0;i<4;i++){const row=el('div','mrow'),c=picker(pv[i]||'',j.panel.source==='env',i>=2);pctl.push(c);row.append(el('div','nm','Relecteur '+'ABCD'[i]),c,el('div','src '+(j.panel.source==='modifié'?'mod':j.panel.source==='env'?'env':''),i===0?(j.panel.source==='env'?'VARIABLE D’ENV':j.panel.source.toUpperCase()):''));studioForm.append(row)}
+  for(let i=0;i<4;i++){const row=el('div','mrow'),c=picker(pv[i]||'',i>=2);c.setAttribute('aria-label','Modèle du relecteur '+'ABCD'[i]);pctl.push(c);row.append(el('div','nm','Relecteur '+'ABCD'[i]),c,el('div','src '+(j.panel.source==='modifié'?'mod':j.panel.source==='env'?'env':''),i===0?(j.panel.source==='env'?'VARIABLE D’ENV':j.panel.source.toUpperCase()):''));studioForm.append(row)}
+  mountModelCatalog(j, suggestions, rows.map(([r,control])=>({title:r.title,control})).concat(pctl.map((control,i)=>({title:'Relecteur '+'ABCD'[i],control}))), assignmentsHeading, msg);
   const save=btn('ENREGISTRER ↗','send',async()=>{
-    const assignments={};for(const [r,c] of rows)if(!c.disabled&&c.value&&c.value!==r.model)assignments[r.key]=c.value;
-    const panel=pctl.map(c=>c.value).filter(Boolean),panelChanged=j.panel.source!=='env'&&JSON.stringify(panel)!==JSON.stringify(pv);
+    const assignments={};for(const [r,c] of rows)if(c.value.trim()!==r.model){if(!c.value.trim()){msg.className='studio-msg';msg.textContent='Renseigne le modèle de '+r.title+'.';c.focus();return}assignments[r.key]=c.value.trim();}
+    const panel=pctl.map(c=>c.value.trim()).filter(Boolean),panelChanged=JSON.stringify(panel)!==JSON.stringify(pv);
     if(!Object.keys(assignments).length&&!panelChanged){msg.className='studio-msg';msg.textContent='Rien à enregistrer.';return}
     if(await put('/api/models',{assignments,panel:panelChanged?panel:null},msg)){flash='✓ Enregistré — pris en compte immédiatement (les tours en cours finissent avec l’ancien modèle).';await modelsPane();init()}});
-  const reset=btn('RÉINITIALISER TOUT','choice',async()=>{if(!confirm('Revenir aux modèles par défaut pour tous les agents ?'))return;
+  const reset=btn('RÉINITIALISER TOUT','choice',async()=>{if(!confirm('Effacer les choix enregistrés et reprendre les modèles de l’environnement ou les valeurs par défaut ?'))return;
     try{const r=await api('/api/models/reset',{method:'POST',body:'{}'});if(r.ok){flash='Modèles par défaut restaurés.';await modelsPane();init()}else msg.textContent=detailMsg(await r.json().catch(()=>({})),r.status)}catch(e){msg.textContent='Connexion impossible : '+e.message}});
   actions(msg,[save,reset]);
+}
+// Catalogue filters only affect discovery; existing assignments and typed IDs are retained.
+function mountModelCatalog(initial,suggestions,targets,before,msg){
+ const section=el('section','model-catalog');section.setAttribute('aria-label','Catalogue des modèles');before.before(section);
+ const heading=el('div','catalog-heading');heading.append(el('h2','','Catalogue des modèles'));section.append(heading);
+ function select(label,options){const control=document.createElement('select');control.setAttribute('aria-label',label);for(const [value,text] of options){const option=document.createElement('option');option.value=value;option.textContent=text;control.append(option)}return control}
+ const source=select('Source du catalogue',initial.routing==='litellm'?[['configured','Alias LiteLLM']]:[['configured',initial.openrouter?'OpenRouter connecté':'Fournisseur configuré'],['openrouter','Catalogue public OpenRouter']]);heading.append(source);
+ const search=inp('search','');search.placeholder='Rechercher un modèle…';search.setAttribute('aria-label','Rechercher un modèle');
+ const family=select('Famille du modèle',[['','Toutes les familles']]);
+ const context=select('Contexte minimum',[['0','Tous les contextes'],['32000','32 k tokens minimum'],['128000','128 k tokens minimum']]);
+ function toggle(label){const wrap=el('label','catalog-toggle'),input=inp('checkbox','');wrap.append(input,document.createTextNode(label));return {wrap,input}}
+ const tools=toggle('Appels d’outils'),free=toggle('Gratuits');
+ const filters=el('div','catalog-filters');filters.append(search,family,context,tools.wrap,free.wrap);section.append(filters);
+ const assign=el('div','catalog-target'),target=select('Affecter le modèle à',targets.map((t,i)=>[String(i),t.title]));assign.append(el('span','','Affecter à'),target);section.append(assign);
+ const note=el('p','catalog-note'),count=el('div','catalog-count'),results=el('div','catalog-results');count.setAttribute('aria-live','polite');section.append(note,count,results);
+ const more=btn('Afficher plus','choice',()=>{limit+=40;render()});section.append(more);
+ let models=initial.available||[],limit=40,requestId=0,catalogError=initial.error;
+ function families(){family.replaceChildren();const all=document.createElement('option');all.value='';all.textContent='Toutes les familles';family.append(all);for(const value of [...new Set(models.map(m=>m.provider||m.id.split('/')[0]))].sort()){const option=document.createElement('option');option.value=value;option.textContent=value;family.append(option)}}
+ function render(){
+  const terms=search.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const filtered=models.filter(m=>terms.every(term=>(m.id+' '+(m.name||'')).toLowerCase().includes(term))&&(!family.value||(m.provider||m.id.split('/')[0])===family.value)&&(!tools.input.checked||m.tools===true)&&(!free.input.checked||m.free===true)&&Number(m.window||0)>=Number(context.value));
+  count.textContent=filtered.length+' modèle'+(filtered.length===1?'':'s')+' · '+models.length+' dans le catalogue';
+  note.textContent=catalogError?(catalogError+(models.length?' — dernier catalogue conservé.':' — la saisie libre reste disponible.')):source.value==='openrouter'&&!initial.openrouter?'Catalogue public OpenRouter. Pour utiliser ces modèles, configure la connexion OpenRouter ; la sélection ne change pas ton fournisseur.':'Choisis un modèle pour remplir le rôle sélectionné, puis enregistre tes choix.';
+  suggestions.replaceChildren();for(const m of filtered){const option=document.createElement('option');option.value=m.id;option.label=m.name||m.id;suggestions.append(option)}
+  results.replaceChildren();
+  if(!filtered.length)results.append(el('p','catalog-note','Aucun modèle ne correspond aux filtres.'));
+  for(const m of filtered.slice(0,limit)){
+   const button=btn('','catalog-model',()=>{const selected=targets[Number(target.value)];selected.control.value=m.id;selected.control.dispatchEvent(new Event('input',{bubbles:true}));msg.className='studio-msg';msg.textContent=m.id+' affecté à '+selected.title+' — enregistre pour appliquer.';announce.textContent=msg.textContent;});
+   button.setAttribute('aria-label','Choisir '+m.id);button.append(el('b','',m.name||m.id),el('small','catalog-id',m.id));
+   const facts=[m.window?Math.round(m.window/1000)+' k tokens':null,m.tools===true?'Outils':null,m.free===true?'Gratuit':null].filter(Boolean);button.append(el('small','',facts.join(' · ')||'Capacités non renseignées'));results.append(button);
+  }
+  more.hidden=filtered.length<=limit;
+ }
+ const announce=el('div','catalog-selection');announce.setAttribute('aria-live','polite');section.append(announce);
+ async function load(force=false){const id=++requestId;source.disabled=true;count.textContent='Chargement du catalogue…';results.replaceChildren();more.hidden=true;
+  try{const response=await api('/api/models/catalog?source='+source.value+(force?'&refresh=true':''));if(!response.ok)throw new Error('HTTP '+response.status);const data=await response.json();if(id!==requestId||!section.isConnected)return;models=data.available||[];catalogError=data.error;families();limit=40;render()}
+  catch(error){if(id!==requestId||!section.isConnected)return;models=[];catalogError='Catalogue indisponible ('+error.message+')';families();render()}
+  finally{if(id===requestId)source.disabled=false}
+ }
+ source.onchange=()=>{tools.input.checked=source.value==='openrouter'||!!initial.openrouter;load()};
+ const refresh=btn('Actualiser','choice',()=>load(true));heading.append(refresh);
+ for(const control of [search,family,context,tools.input,free.input])control.addEventListener('input',()=>{limit=40;render()});
+ tools.input.checked=!!initial.openrouter;families();render();
 }
 async function showForm(it){studioForm.replaceChildren();return sTab==='skills'?skillForm(it):agentForm(it)}
 async function skillForm(it){
@@ -769,9 +901,9 @@ async function agentForm(it){
 }
 async function init(){
   try{const r=await api('/api/meta');if(r.status===401){if(askToken())return init();setStatus(false,'<b>JETON REQUIS</b><br>Recharge la page pour le saisir');return}
-    const meta=await r.json();applyMeta(meta);supModel=meta.models&&meta.models.superviseur?String(meta.models.superviseur).split('/').pop():'';
+    const meta=await r.json();applyMeta(meta);if(meta.setup_required&&!connectionSetupShown){connectionSetupShown=true;openStudio('connections')};supModel=(meta.role_models||{}).supervisor||(meta.models&&meta.models.superviseur?String(meta.models.superviseur):'');updateModelIndicator();
     const esc=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    setStatus(true,'<b>STUDIO / LOCAL</b><br>'+esc(meta.workdir)+'<br>'+(meta.sandbox?'bash isolé':'bash NON isolé')+(meta.models&&meta.models.superviseur?'<br>superviseur : '+esc(String(meta.models.superviseur).split('/').pop()):''));
+    setStatus(true,'<b>STUDIO / LOCAL</b><br>'+esc(meta.workdir)+'<br>'+(meta.sandbox?'bash isolé':'bash NON isolé')+(meta.models&&meta.models.superviseur?'<br>superviseur : '+esc(modelDisplay(supModel)):''));
     syncPending();refreshCtx();loadSkills()}catch{setStatus(false,'<b>HORS LIGNE</b><br>Serveur injoignable')}
 }
 $('chatForm').addEventListener('submit',e=>{e.preventDefault();submit()});

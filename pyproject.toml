@@ -31,6 +31,7 @@ dev = ["playwright"]  # test navigateur du front
 [project.scripts]
 cc = "claude_clone.main:cli"
 cc-web = "claude_clone.server:cli"
+cc-gateway = "claude_clone.gateway:cli"
 
 [tool.setuptools]
 packages = ["claude_clone"]

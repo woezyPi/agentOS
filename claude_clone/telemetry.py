@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from langchain_core.callbacks import AsyncCallbackHandler
+from claude_clone.failover import reported_model
 
 LOG_DIR = Path.home() / ".claude_clone" / "logs"
 
@@ -32,8 +33,8 @@ class Telemetry:
         except OSError:
             pass
 
-    def record_llm(self, role: str, model: str, tokens_in: int | None, tokens_out: int | None, ms: float, error: str | None = None) -> None:
-        self._log({"kind": "llm", "role": role, "model": model, "in": tokens_in, "out": tokens_out, "ms": round(ms), "error": error})
+    def record_llm(self, role: str, model: str, tokens_in: int | None, tokens_out: int | None, ms: float, error: str | None = None, served_model: str | None = None) -> None:
+        self._log({"kind": "llm", "role": role, "model": model, "in": tokens_in, "out": tokens_out, "ms": round(ms), "error": error, "served_model": served_model})
 
     def record_tool(self, name: str, status: str, ms: float) -> None:
         self._log({"kind": "tool", "name": name, "status": status, "ms": round(ms)})
@@ -79,7 +80,12 @@ class UsageCallback(AsyncCallbackHandler):
             usage = response.generations[0][0].message.usage_metadata
         except (AttributeError, IndexError):
             pass
-        TELEMETRY.record_llm(self.role, self.model, (usage or {}).get("input_tokens"), (usage or {}).get("output_tokens"), ms)
+        served_model = None
+        try:
+            served_model = reported_model(response.generations[0][0].message.response_metadata)
+        except (AttributeError, IndexError):
+            pass
+        TELEMETRY.record_llm(self.role, self.model, (usage or {}).get("input_tokens"), (usage or {}).get("output_tokens"), ms, served_model=served_model)
 
     async def on_llm_error(self, error, *, run_id, **kwargs) -> None:
         ms = (time.monotonic() - self._t0.pop(run_id, time.monotonic())) * 1000

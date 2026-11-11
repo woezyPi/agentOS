@@ -37,7 +37,7 @@ textarea { font-size: 19px !important; line-height: 1.6 !important; }
 .nav button,.thread,.new { font-size: 14px !important; }
 .section-label, .breadcrumb, .status, .model-select, .sidebar-foot { font-size: 12px !important; }
 @media(max-width:800px) {
-  :root { --agentos-reading-size: 18px; }
+  :root { --agentos-reading-size: 18px; }cc 
   .content { padding-left: 16px !important; padding-right: 16px !important; }
   .message { grid-template-columns: 1fr !important; gap: 7px !important; }
   .message-role { padding-top: 0 !important; }

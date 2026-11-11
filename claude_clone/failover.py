@@ -22,12 +22,32 @@ FAILURE_THRESHOLD = 2
 COOLDOWN = 60.0
 
 
+FREE_QUOTA_MESSAGE = (
+    "Quota quotidien OpenRouter épuisé pour les variantes gratuites (:free). "
+    "Changer de variante :free ne rétablit pas ce quota. "
+    "Attends sa réinitialisation, ou choisis un modèle auquel ton compte a accès dans Modèles."
+)
+
+
+def daily_free_quota(exc: BaseException) -> bool:
+    """This explicit account-wide quota cannot be resolved by model failover."""
+    return "free-models-per-day" in str(exc).lower()
+
+
 def switchable(exc: BaseException) -> bool:
     """Vrai si l'erreur justifie d'essayer un autre modèle."""
+    if daily_free_quota(exc):
+        return False
     if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError, openai.RateLimitError,
                         openai.InternalServerError, httpx.TransportError)):
         return True
     return isinstance(exc, openai.APIStatusError) and exc.status_code in (404, 408, 502, 503, 504)
+
+
+def reported_model(metadata: dict) -> str | None:
+    headers = metadata.get("headers") or {}
+    model = headers.get("x-litellm-model-name") or metadata.get("model_name")
+    return model if isinstance(model, str) and model else None
 
 
 class ModelPool:
@@ -73,7 +93,13 @@ class ModelPool:
                     self._open_until[name] = time.monotonic() + self.cooldown
                 continue
             self._fails[name] = 0
-            self._shared["last"] = name
+            metadata = getattr(result, "response_metadata", {}) or {}
+            actual = reported_model(metadata)
+            self._shared["last"] = actual or name
+            if actual:
+                result.response_metadata["model_name"] = actual
+            # Keep only the model identity, not HTTP diagnostic headers, in conversation checkpoints.
+            metadata.pop("headers", None)
             self._open_until.pop(name, None)
             if rank > 0 or name != self.candidates[0][0]:
                 self._shared["notice"] = f"↪ basculé sur {name}" + (f" ({type(last).__name__} sur le modèle préféré)" if last else " (modèle préféré indisponible)")

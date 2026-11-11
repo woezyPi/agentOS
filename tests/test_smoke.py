@@ -310,6 +310,16 @@ async def test_failover(tmp):
     except openai.BadRequestError: pass  # 400 : pas de bascule
     try: await ModelPool([("A", M("A", down)), ("B", M("B", down))]).ainvoke([]); raise AssertionError
     except openai.APIConnectionError: pass  # tous HS : l'erreur remonte
+    quota = lambda: openai.RateLimitError("Rate limit exceeded: free-models-per-day", response=httpx.Response(429, request=httpx.Request("POST", "http://x")), body=None)
+    exhausted, fallback = M("free", quota), M("paid")
+    try:
+        await ModelPool([("free", exhausted), ("paid", fallback)]).ainvoke([])
+        raise AssertionError("le quota doit remonter")
+    except openai.RateLimitError:
+        pass
+    assert exhausted.n == 1 and fallback.n == 0, "pas de repli automatique pour un quota quotidien épuisé"
+    temporary = lambda: openai.RateLimitError("Temporarily rate limited", response=httpx.Response(429, request=httpx.Request("POST", "http://x")), body=None)
+    assert (await ModelPool([("A", M("A", temporary)), ("B", M("B"))]).ainvoke([])).content == "B"
     print("✓ failover : bascule, disjoncteur, pas de bascule sur 400, erreur finale si tout est HS")
 
 

@@ -11,6 +11,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from claude_clone import gateway as GW
 
 # --- Valeurs par défaut (surchargeables, voir load_settings) ------------------
 # Passerelle AI Dashboard Cegedim (clé nominative : https://ai-dashboard.cegedim.cloud/api-keys).
@@ -78,6 +79,7 @@ CONTEXT_KEEP_TOKENS = 20_000     # taille approximative de la fin de conversatio
 # os.environ (sinon les commandes bash lancées par le LLM les hériteraient).
 _WANTED = {
     "LLM_BASE_URL", "LLM_API_KEY", "CEGEDIM_LLM_API_KEY",
+    "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY",
     "SUPERVISOR_BASE_URL", "SUPERVISOR_API_KEY", "SUPERVISOR_MODEL",
     "CODER_BASE_URL", "CODER_API_KEY", "CODER_MODEL", "SUPERVISOR_FALLBACKS", "CODER_FALLBACKS",
     "RESEARCH_MODEL", "RESEARCH_FALLBACKS", "AGENT_FALLBACKS", "PANEL_MODELS", "WORKER_MODEL",
@@ -138,6 +140,8 @@ class Settings:
     agent_fallbacks: tuple[str, ...] = ()
     panel_models: tuple[str, ...] = ()
     worker_model: str = DEFAULT_WORKER_MODEL
+    managed_gateway: bool = False
+    free_only: bool = False
 
     def placeholder_fields(self) -> list[str]:
         """Liste les champs encore à leur valeur placeholder."""
@@ -152,18 +156,24 @@ def _models(value: str) -> tuple[str, ...]:
     return () if value.strip().lower() in ("none", "off", "-") else tuple(m.strip() for m in value.split(",") if m.strip())
 
 
-# --- Modèles choisis dans l'interface : ~/.claude_clone/models.json (la variable d'environnement reste prioritaire) ----------------
+# --- Modèles choisis dans l'interface : ~/.claude_clone/models.json (prioritaires sur les modèles de l’environnement) ----------------
 MODELS_FILE = Path.home() / ".claude_clone" / "models.json"
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/\-]{0,99}$")
-# clé de l'interface → variable d'environnement qui, si elle existe, l'emporte
+# clé de l'interface → variable d'environnement utilisée sans choix enregistré
 ENV_OF = {"supervisor": "SUPERVISOR_MODEL", "coder": "CODER_MODEL", "researcher": "RESEARCH_MODEL", "worker": "WORKER_MODEL", **{r: f"{r.upper()}_MODEL" for r in ROLE_DEFAULT_MODELS}}
 ASSIGNABLE = tuple(ENV_OF)
+
+
+def model_overrides_file() -> Path:
+    if GW.read_config().get("free_only"):
+        return MODELS_FILE.with_name("gateway-free-models.json")
+    return MODELS_FILE.with_name("gateway-models.json") if GW.enabled() else MODELS_FILE
 
 
 def read_model_overrides() -> dict:
     """{clé: modèle, "panel": [modèles]} ; tout ce qui est invalide est ignoré (le fichier ne peut jamais casser le démarrage)."""
     try:
-        raw = json.loads(MODELS_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(model_overrides_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     out: dict = {}
@@ -179,20 +189,23 @@ def read_model_overrides() -> dict:
 
 
 def write_model_overrides(overrides: dict) -> None:
-    MODELS_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    tmp = MODELS_FILE.with_name(MODELS_FILE.name + ".tmp")
+    path = model_overrides_file()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(overrides, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, MODELS_FILE)  # atomique
+    os.replace(tmp, path)  # atomique
 
 
 def model_sources() -> dict[str, str]:
     """{clé: "env" | "modifié" | "défaut"} : d'où vient le modèle effectif de chaque rôle."""
     files = [_parse_dotenv(p) for p in _DOTENV_FILES]
     ov = read_model_overrides()
-    src = {k: ("env" if _lookup(ENV_OF[k], files) else "modifié" if k in ov else "défaut") for k in ASSIGNABLE}
-    src["panel"] = "env" if _lookup("PANEL_MODELS", files) else "modifié" if "panel" in ov else "défaut"
+    if GW.enabled() or GW.read_config().get("free_only"):
+        return {k: "modifié" if k in ov else "route LiteLLM" for k in (*ASSIGNABLE, "panel")}
+    src = {k: ("modifié" if k in ov else "env" if _lookup(ENV_OF[k], files) else "défaut") for k in ASSIGNABLE}
+    src["panel"] = "modifié" if "panel" in ov else "env" if _lookup("PANEL_MODELS", files) else "défaut"
     return src
 
 
@@ -201,25 +214,27 @@ def load_settings() -> Settings:
 
     LLM_BASE_URL / LLM_API_KEY (ou CEGEDIM_LLM_API_KEY) servent de valeurs communes ;
     chaque modèle peut avoir son propre endpoint/clé via SUPERVISOR_* / CODER_*.
+    Les choix de modèles enregistrés dans l’interface sont prioritaires sur l’environnement.
     """
     files = [_parse_dotenv(p) for p in _DOTENV_FILES]
     ov = read_model_overrides()
     get = lambda name, default=None: _lookup(name, files) or default
     base_url = get("LLM_BASE_URL", DEFAULT_URL)
     api_key = get("LLM_API_KEY") or get("CEGEDIM_LLM_API_KEY") or PLACEHOLDER_KEY
-    return Settings(
+    settings = Settings(
         supervisor_base_url=get("SUPERVISOR_BASE_URL", base_url),
         supervisor_api_key=get("SUPERVISOR_API_KEY", api_key),
-        supervisor_model=get("SUPERVISOR_MODEL", ov.get("supervisor", DEFAULT_SUPERVISOR_MODEL)),
+        supervisor_model=ov.get("supervisor", get("SUPERVISOR_MODEL", DEFAULT_SUPERVISOR_MODEL)),
         coder_base_url=get("CODER_BASE_URL", base_url),
         coder_api_key=get("CODER_API_KEY", api_key),
-        coder_model=get("CODER_MODEL", ov.get("coder", DEFAULT_CODER_MODEL)),
+        coder_model=ov.get("coder", get("CODER_MODEL", DEFAULT_CODER_MODEL)),
         supervisor_fallbacks=_models(get("SUPERVISOR_FALLBACKS", DEFAULT_SUPERVISOR_FALLBACKS)),
         coder_fallbacks=_models(get("CODER_FALLBACKS", DEFAULT_CODER_FALLBACKS)),
-        research_model=get("RESEARCH_MODEL", ov.get("researcher", DEFAULT_RESEARCH_MODEL)),
+        research_model=ov.get("researcher", get("RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)),
         research_fallbacks=_models(get("RESEARCH_FALLBACKS", DEFAULT_RESEARCH_FALLBACKS)),
-        agent_models={role: get(f"{role.upper()}_MODEL", ov.get(role, model)) for role, model in ROLE_DEFAULT_MODELS.items()},
+        agent_models={role: ov.get(role, get(f"{role.upper()}_MODEL", model)) for role, model in ROLE_DEFAULT_MODELS.items()},
         agent_fallbacks=_models(get("AGENT_FALLBACKS", DEFAULT_AGENT_FALLBACKS)),
-        worker_model=get("WORKER_MODEL", ov.get("worker", DEFAULT_WORKER_MODEL)),
-        panel_models=_models(get("PANEL_MODELS", ",".join(ov["panel"]) if "panel" in ov else DEFAULT_PANEL_MODELS))[:4],
+        worker_model=ov.get("worker", get("WORKER_MODEL", DEFAULT_WORKER_MODEL)),
+        panel_models=_models(",".join(ov["panel"]) if "panel" in ov else get("PANEL_MODELS", DEFAULT_PANEL_MODELS))[:4],
     )
+    return GW.apply_settings(settings, ov)
