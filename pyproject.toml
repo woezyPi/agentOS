@@ -36,4 +36,4 @@ cc-web = "claude_clone.server:cli"
 packages = ["claude_clone"]
 
 [tool.setuptools.package-data]
-claude_clone = ["static/*.html", "skills/*/SKILL.md"]
+claude_clone = ["static/*.html", "static/css/*.css", "static/js/*.js", "skills/*/SKILL.md"]

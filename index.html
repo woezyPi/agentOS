@@ -156,6 +156,82 @@ textarea { font-size: 19px !important; line-height: 1.6 !important; }
 
 </style>
 <!-- agentos readability end -->
+<style>
+
+/* V4 — orchestration cockpit: quiet surfaces, clear states, no gradients */
+:root{--lime:#d2fb63;--orange:#d2fb63;--pink:#ff62b0;--line:#292929;--soft:#c8c8c5;--quiet:#999995}
+.content{width:min(100%,1400px)!important;padding-inline:clamp(18px,3vw,48px)}
+.feed{scrollbar-gutter:stable}
+.conversation{gap:0!important;padding-top:12px!important}
+.message{border-bottom:1px solid #242424;padding:24px 0!important}
+.message-role{letter-spacing:.07em}
+.message-content{max-width:100ch}
+.message.agent .message-content{font-weight:400}
+.cockpit{margin-top:29px;margin-bottom:13px;font-size:14px}
+.cockpit-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;border-bottom:1px solid #303030;padding-bottom:20px}
+.cockpit-eyebrow{color:var(--lime);font:11px var(--mono);letter-spacing:1.2px;margin-bottom:10px}
+.cockpit-head h2{font-size:clamp(23px,2.4vw,32px);font-weight:600;letter-spacing:-.04em;line-height:1.2;margin:0 0 8px}
+.cockpit-sub{font-size:14px;color:var(--soft);line-height:1.55;margin:0;max-width:700px}
+.cockpit-count{font:12px var(--mono);white-space:nowrap;color:var(--quiet);padding-top:5px}
+.cockpit-empty{padding:22px 0;color:var(--quiet);font-size:14px;line-height:1.7}
+.cockpit-summary{display:flex;gap:10px;flex-wrap:wrap;padding:20px 0 16px;align-items:center}
+.cockpit-stat{font:11px var(--mono);color:var(--soft);padding-right:14px;border-right:1px solid #363636}
+.cockpit-stat:last-child{border:0}
+.cockpit-stat strong{color:var(--text);font-size:14px}
+.cockpit-flow{display:flex;align-items:center;gap:8px;padding:7px 0 19px;color:var(--quiet);font:11px var(--mono)}
+.cockpit-supervisor{padding:9px 13px;background:#171717;border-left:2px solid var(--lime);color:var(--text)}
+.cockpit-arrow{font-size:18px;color:var(--lime)}
+.cockpit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.agent-card{background:#131313;border:1px solid #303030;border-top:3px solid var(--agent-accent,var(--pink));padding:19px 19px 16px;text-align:left;color:var(--text);display:flex;flex-direction:column;gap:14px;min-width:0;min-height:175px;transition:background .14s,border-color .14s}
+.agent-card:hover,.agent-card:focus-visible{background:#1a1a1a;border-color:#626262;border-top-color:var(--agent-accent,var(--pink))}
+.agent-card-top{display:flex;align-items:center;gap:10px;min-width:0}
+.agent-card-dot{width:8px;height:8px;flex:none;background:var(--agent-accent,var(--pink))}
+.agent-card-name{font:600 14px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-card-state{font:11px var(--mono);color:var(--lime)}
+.agent-card-state.error{color:#ff8585}.agent-card-state.wait{color:var(--quiet)}
+.agent-card-desc{font:14px/1.6 var(--sans);color:var(--soft);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.agent-card-foot{margin-top:auto;display:flex;justify-content:space-between;gap:8px;color:var(--quiet);font:11px var(--mono)}
+.cockpit-lower{margin-top:23px;border-top:1px solid #292929;padding-top:18px}
+.cockpit-lower-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.cockpit-lower-head h3{font-size:15px;font-weight:600;margin:0}
+.cockpit-filters{display:flex;gap:6px;flex-wrap:wrap}
+.cockpit-filter{background:#161616;border:1px solid #333;color:#b9b9b9;padding:8px 10px;font:11px var(--mono)}
+.cockpit-filter[aria-pressed=true]{border-color:var(--lime);color:var(--lime)}
+.cockpit-log{display:grid;gap:0;max-height:235px;overflow:auto}
+.cockpit-log-row{display:grid;grid-template-columns:65px minmax(95px,140px) minmax(0,1fr);gap:12px;padding:10px 4px;border-bottom:1px solid #242424;align-items:start;font:12px/1.6 var(--mono)}
+.cockpit-log-time{color:var(--quiet)}.cockpit-log-agent{color:var(--lime);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cockpit-log-detail{color:var(--soft);overflow-wrap:anywhere}
+.cockpit-report{padding:16px 18px;border-left:2px solid var(--pink);background:#141414;margin-top:18px}
+.cockpit-report h3{margin:0 0 9px;font-size:14px}.cockpit-report p{margin:0;color:var(--soft);line-height:1.6}
+.trace-scroll{padding:16px}.node{border-bottom:1px solid #292929}.node.active .node-dot{background:var(--lime)}
+.trace-header{padding:18px}.trace-event{padding-bottom:17px}
+.trace-event p{overflow-wrap:anywhere}
+@media(max-width:1150px){.cockpit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.cockpit-grid{grid-template-columns:1fr}.cockpit-head{flex-wrap:wrap}.cockpit-count{padding:0}.cockpit-log-row{grid-template-columns:58px minmax(0,1fr);gap:5px 12px}.cockpit-log-detail{grid-column:2}.cockpit-flow{flex-wrap:wrap}.cockpit-head h2{font-size:25px}}
+</style>
+<style>
+
+/* V5 — densité contrôlée et inspection à la demande */
+.top-right{position:relative;gap:10px}.topbar{min-height:64px;padding-block:9px}
+.settings-trigger{background:transparent;border:1px solid #343434;color:#c9c9c9;padding:10px 12px;font:11px var(--mono);white-space:nowrap}
+.settings-trigger:hover,.settings-trigger[aria-expanded=true]{border-color:var(--lime);color:var(--lime)}
+.settings-panel{position:absolute;z-index:8;right:0;top:calc(100% + 13px);width:260px;background:#161616;border:1px solid #444;padding:18px;box-shadow:0 16px 36px #000a}
+.settings-panel[hidden]{display:none}.settings-title{font:12px var(--mono);color:var(--pink);margin-bottom:18px}
+.settings-row{display:flex;justify-content:space-between;align-items:center;gap:9px;margin-bottom:15px;font:10px var(--mono);color:var(--soft)}
+.settings-row>div{display:flex;gap:5px}.settings-panel .trace-toggle{width:100%;text-align:left}
+.conversation{gap:0!important}.message{padding:15px 0!important;border-bottom:1px solid #222;grid-template-columns:94px minmax(0,1fr)!important;gap:15px!important}
+.message-role{font-size:12px!important;padding-top:4px!important}.message-content,.message .message-content,.message-content p,.message-content li,.message-content blockquote{font-size:clamp(16px,calc(17px * var(--font-scale)),23px)!important;line-height:1.5!important}
+.message-actions{margin-top:5px!important}.tiny-action{font-size:10px!important;padding:2px 0!important}.message.user .message-content{font-weight:550}
+.cockpit{margin:13px 0!important}.cockpit-head{padding-bottom:10px}.cockpit-head h2{font-size:21px}.cockpit-sub{font-size:12px}.cockpit-summary{padding:12px 0}.cockpit-flow{padding:0 0 12px}
+.cockpit-grid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:9px}
+.agent-card{padding:12px 13px;min-height:0;gap:9px;border:1px solid #292929;border-top:2px solid var(--agent-accent)}
+.agent-card-top{gap:8px}.agent-card-name{font-size:12px}.agent-card-state{font-size:10px}.agent-card-desc{font-size:12px;line-height:1.45;-webkit-line-clamp:1;line-clamp:1;white-space:nowrap;text-overflow:ellipsis;display:block}
+.agent-card-foot{font-size:10px}.agent-card[aria-pressed=true]{background:#202020;border-color:var(--agent-accent)}
+.cockpit-lower{margin-top:12px;padding-top:12px}.cockpit-lower[hidden]{display:none}.cockpit-expand{color:var(--lime);border:1px solid #373737;background:#151515;font:11px var(--mono);padding:9px 12px}
+.cockpit-progress{height:3px;background:#303030;margin-top:10px}.cockpit-progress-fill{height:100%;background:var(--lime);transition:width .2s}
+.cockpit-progress-caption{font:10px var(--mono);color:var(--quiet);margin-top:6px}
+.error-message .message-content{color:#ff9090!important;font-weight:400!important}.error-message .message-role{color:#ff9090!important}.error-message{border-left:2px solid #ff7070;padding-left:12px!important}
+@media(max-width:720px){.message{grid-template-columns:1fr!important;gap:4px!important}.cockpit-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.settings-panel{right:-65px;max-width:calc(100vw - 30px)}}
+</style>
 </head>
 <body>
 <div class="app" id="app">
@@ -171,7 +247,7 @@ textarea { font-size: 19px !important; line-height: 1.6 !important; }
 <main class="main">
  <header class="topbar">
   <div class="top-left"><button class="menu-toggle" id="menuToggle" aria-label="Afficher le menu">☰</button><span class="swatch"></span><div class="breadcrumb">WORKSPACE <span style="color:#555">/</span> <strong id="conversationTitle">NOUVELLE CONVERSATION</strong></div></div>
-  <div class="top-right"><label class="visually-hidden" for="agent">Agent</label><select class="model-select" id="agent"><option value="auto">AUTO / ROUTEUR</option><option value="codeur">CODEUR</option><option value="reflexion">RÉFLEXION</option><option value="reviewer">REVIEWER</option></select><button class="font-control" id="fontDown" type="button" title="Réduire la taille du texte">A−</button><button class="font-control" id="fontUp" type="button" title="Augmenter la taille du texte">A+</button><button class="trace-toggle" id="traceToggle" type="button" aria-controls="tracePanel" aria-expanded="false">ACTIVITÉ ↗</button><div class="status">● MODE DÉMO</div></div>
+  <div class="top-right"><label class="visually-hidden" for="agent">Agent</label><select class="model-select" id="agent"><option value="auto">AUTO / ROUTEUR</option><option value="codeur">CODEUR</option><option value="reflexion">RÉFLEXION</option><option value="reviewer">REVIEWER</option></select><button class="settings-trigger" id="settingsToggle" type="button" aria-controls="settingsPanel" aria-expanded="false">RÉGLAGES ⚙</button><div class="settings-panel" id="settingsPanel" hidden><div class="settings-title">AFFICHAGE</div><div class="settings-row"><span>TAILLE DU TEXTE</span><div><button class="font-control" id="fontDown" type="button" title="Réduire la taille du texte">A−</button><button class="font-control" id="fontUp" type="button" title="Augmenter la taille du texte">A+</button></div></div><button class="trace-toggle" id="traceToggle" type="button" aria-controls="tracePanel" aria-expanded="false">OUVRIR LE JOURNAL ↗</button></div><div class="status">● MODE DÉMO</div></div>
  </header>
  <div class="trace-layout"><div class="content">
   <section class="feed" id="feed" aria-live="polite"></section>
@@ -190,6 +266,7 @@ const now=()=>new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-di
 function makeId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(36).slice(2)}
 let state={active:null,conversations:[]};
 try{const parsed=JSON.parse(localStorage.getItem(KEY));if(parsed&&Array.isArray(parsed.conversations))state=parsed}catch{}
+let eventFilter='all', selectedAgent=null, logExpanded=false;
 let trace=[];
 try{const parsed=JSON.parse(sessionStorage.getItem(TRACE_KEY));if(Array.isArray(parsed))trace=parsed.filter(x=>x&&typeof x==='object').slice(-120)}catch{}
 let fontScale=Number(localStorage.getItem('agentos-font-scale'))||1.2;
@@ -197,8 +274,8 @@ function setFont(v){fontScale=Math.min(1.6,Math.max(.9,Math.round(v*10)/10));doc
 setFont(fontScale);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){console.warn('Sauvegarde impossible',e)}}
 function current(){return state.conversations.find(c=>c.id===state.active)}
-function start(){const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
-function select(id){if(!state.conversations.some(c=>c.id===id))return;state.active=id;save();render();closeMenu()}
+function start(){selectedAgent=null;eventFilter='all';logExpanded=false;const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
+function select(id){if(!state.conversations.some(c=>c.id===id))return;selectedAgent=null;eventFilter='all';logExpanded=false;state.active=id;save();render();closeMenu()}
 function remove(id){const c=state.conversations.find(c=>c.id===id);if(!c||!confirm('Supprimer cette conversation locale ?'))return;state.conversations=state.conversations.filter(c=>c.id!==id);trace=trace.filter(e=>e.conversationId!==id);persistTrace();if(state.active===id)state.active=state.conversations[0]?.id??null;if(!state.active){start();return}save();render()}
 function closeMenu(){app.classList.remove('menu-open')}
 function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=document.createElement('div');row.className='thread'+(c.id===state.active?' active':'');const open=document.createElement('button');open.className='thread-title';open.style.cssText='flex:1;text-align:left;border:0;color:inherit;background:transparent;padding:0;cursor:pointer;font:inherit';open.textContent=c.title;open.title=c.title;open.onclick=()=>select(c.id);const del=document.createElement('button');del.className='delete-thread';del.textContent='×';del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);row.append(open,del);threads.append(row)}}
@@ -230,10 +307,11 @@ function render(){
   feed.innerHTML=`<div class="empty"><div class="empty-kicker">/ TON ESPACE DE TRAVAIL</div><h1>Des idées.<br><em>Du concret.</em></h1><p>Écris ta demande, choisis un agent si besoin. Une interface brute, conçue pour penser et produire sans se perdre dans les menus.</p><div class="suggestions"><button class="suggestion" data-prompt="Conçois l’architecture de mon système multi-agents."><span>Concevoir une architecture</span><small>01 / RÉFLEXION ↗</small></button><button class="suggestion" data-prompt="Relis mon code et détecte les problèmes critiques."><span>Faire une review de code</span><small>02 / REVIEWER ↗</small></button><button class="suggestion" data-prompt="Crée un endpoint FastAPI pour exécuter une mission."><span>Écrire un endpoint API</span><small>03 / CODEUR ↗</small></button><button class="suggestion" data-prompt="Décompose mon objectif en tâches prioritaires."><span>Préparer un plan d’action</span><small>04 / ROUTEUR ↗</small></button></div></div>`;
   feed.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{prompt.value=b.dataset.prompt;prompt.focus()}));renderTrace();return;
  }
+ const cockpit=document.createElement('section');cockpit.id='cockpit';cockpit.className='cockpit';feed.append(cockpit);renderDashboard();
  const wrap=document.createElement('div');wrap.className='conversation';
  for(const m of c.messages){
-  const art=document.createElement('article');art.className='message '+(m.role==='user'?'user':'agent');
-  const role=document.createElement('div');role.className='message-role';role.textContent=m.role==='user'?'TOI':String(m.agent||'AGENT').toUpperCase();
+  const art=document.createElement('article');art.className='message '+(m.role==='user'?'user':'agent')+((m.role!=='user'&&/connexion perdue|failed to fetch|networkerror/i.test(m.text))?' error-message':'');
+  const role=document.createElement('div');role.className='message-role';role.textContent=m.role==='user'?'TOI':(art.classList.contains('error-message')?'ERREUR':String(m.agent||'AGENT').toUpperCase());
   const content=document.createElement('div');const txt=document.createElement('div');txt.className='message-content';
   if(m.role==='user')txt.textContent=m.text;else txt.innerHTML=formatMarkdown(m.text);
   content.append(txt);
@@ -249,7 +327,43 @@ const EVENT_TYPES=new Set(['message','started','completed','handoff','tool','err
 function recordEvent(e){
  if(!e||!EVENT_TYPES.has(e.type))return false;
  const event={id:makeId(),conversationId:String(e.conversationId||state.active||''),type:e.type,agent:String(e.agent||'SYSTÈME').slice(0,80),target:String(e.target||'').slice(0,80),detail:String(e.detail||'').slice(0,1000),time:now(),timestamp:Date.now()};
- trace.push(event);trace=trace.slice(-120);persistTrace();renderTrace();return true;
+ trace.push(event);trace=trace.slice(-120);persistTrace();renderTrace();renderDashboard();return true;
+}
+function renderDashboard(){
+ const root=$('cockpit');if(!root)return;
+ const scoped=trace.filter(e=>e.conversationId===state.active);
+ const observed=scoped.filter(e=>e.type!=='message'&&e.agent!=='INTERFACE'&&e.agent!=='SYSTÈME');
+ root.replaceChildren();
+ const head=document.createElement('header');head.className='cockpit-head';
+ const heading=document.createElement('div');heading.innerHTML='<div class="cockpit-eyebrow">/ ORCHESTRATION</div><h2>Vue d’exécution</h2><p class="cockpit-sub">Agents observés, délégations et appels d’outils. Uniquement à partir des événements réellement transmis.</p>';
+ const count=document.createElement('div');count.className='cockpit-count';count.textContent=observed.length?`${observed.length} événements agent`:'AUCUNE EXÉCUTION OBSERVÉE';head.append(heading,count);root.append(head);
+ if(!observed.length){const empty=document.createElement('p');empty.className='cockpit-empty';empty.textContent='Les cartes d’agents apparaîtront ici dès que le backend transmettra des événements. Cette interface locale ne lance pas de modèle.';root.append(empty);return}
+ const names=[...new Set(observed.map(e=>e.agent))];
+ const stats=document.createElement('div');stats.className='cockpit-summary';
+ for(const [label,val] of [['AGENTS',names.length],['OUTILS',observed.filter(e=>e.type==='tool').length],['DÉLÉGATIONS',observed.filter(e=>e.type==='handoff').length],['ERREURS',observed.filter(e=>e.type==='error').length]]){
+  const item=document.createElement('div');item.className='cockpit-stat';const strong=document.createElement('strong');strong.textContent=String(val);item.append(strong,document.createTextNode(' '+label));stats.append(item)
+ }root.append(stats);
+ const flow=document.createElement('div');flow.className='cockpit-flow';const parent=document.createElement('span');parent.className='cockpit-supervisor';parent.textContent='SUPERVISION';const arrow=document.createElement('span');arrow.className='cockpit-arrow';arrow.textContent='→';const to=document.createElement('span');to.textContent=names.length+' agent'+(names.length>1?'s':'')+' observé'+(names.length>1?'s':'');flow.append(parent,arrow,to);root.append(flow);
+ const cards=document.createElement('div');cards.className='cockpit-grid';
+ names.forEach((name,i)=>{
+  const ev=observed.filter(e=>e.agent===name),last=ev[ev.length-1];const lastStatus=[...ev].reverse().find(e=>['started','completed','error'].includes(e.type));
+  const status=lastStatus?.type==='error'?'ERREUR':lastStatus?.type==='completed'?'TERMINÉ':lastStatus?.type==='started'?'EN COURS':'OBSERVÉ';
+  const note=[...ev].reverse().find(e=>e.detail)?.detail||'Aucun détail d’activité transmis.';
+  const tools=ev.filter(e=>e.type==='tool').length;
+  const card=document.createElement('button');card.type='button';card.className='agent-card';card.setAttribute('aria-pressed',String(selectedAgent===name));card.style.setProperty('--agent-accent',['#ff747c','#ffae52','#ff62b0','#75baf6'][i%4]);card.title='Filtrer le journal sur '+name;
+  const top=document.createElement('div');top.className='agent-card-top';const dot=document.createElement('span');dot.className='agent-card-dot';const title=document.createElement('span');title.className='agent-card-name';title.textContent=name;top.append(dot,title);
+  const state=document.createElement('div');state.className='agent-card-state'+(status==='ERREUR'?' error':status==='OBSERVÉ'?' wait':'');state.textContent=status;
+  const desc=document.createElement('div');desc.className='agent-card-desc';desc.textContent=note;
+  const foot=document.createElement('div');foot.className='agent-card-foot';const tc=document.createElement('span');tc.textContent=tools+' outil'+(tools>1?'s':'');const more=document.createElement('span');more.textContent='INSPECTER ↗';foot.append(tc,more);
+  card.append(top,state,desc,foot);card.onclick=()=>{selectedAgent=selectedAgent===name?null:name;logExpanded=Boolean(selectedAgent);renderDashboard();if(logExpanded)root.querySelector('.cockpit-lower')?.scrollIntoView({block:'nearest',behavior:'smooth'})};cards.append(card)
+ });root.append(cards);
+ const completed=names.filter(name=>{const ev=observed.filter(e=>e.agent===name);const terminal=[...ev].reverse().find(e=>['started','completed','error'].includes(e.type));return terminal?.type==='completed'}).length;const progress=document.createElement('div');progress.className='cockpit-progress';const fill=document.createElement('div');fill.className='cockpit-progress-fill';fill.style.width=(completed/names.length*100)+'%';progress.append(fill);root.append(progress);const progressCaption=document.createElement('div');progressCaption.className='cockpit-progress-caption';progressCaption.textContent=completed+'/'+names.length+' agents terminés';root.append(progressCaption);const expand=document.createElement('button');expand.type='button';expand.className='cockpit-expand';expand.textContent=logExpanded?'MASQUER LA CHRONOLOGIE −':'VOIR LA CHRONOLOGIE ↗';expand.setAttribute('aria-expanded',String(logExpanded));expand.onclick=()=>{logExpanded=!logExpanded;renderDashboard()};root.append(expand);const lower=document.createElement('div');lower.className='cockpit-lower';lower.hidden=!logExpanded;const lowerHead=document.createElement('div');lowerHead.className='cockpit-lower-head';const h=document.createElement('h3');h.textContent=selectedAgent?'Chronologie · '+selectedAgent:'Chronologie des événements';const filters=document.createElement('div');filters.className='cockpit-filters';
+ for(const [key,label] of [['all','TOUT'],['tool','OUTILS'],['handoff','DÉLÉGATIONS'],['error','ERREURS']]){const b=document.createElement('button');b.type='button';b.className='cockpit-filter';b.textContent=label;b.setAttribute('aria-pressed',String(eventFilter===key));b.onclick=()=>{eventFilter=key;renderDashboard()};filters.append(b)}
+ if(selectedAgent){const clear=document.createElement('button');clear.type='button';clear.className='cockpit-filter';clear.textContent='TOUS LES AGENTS ×';clear.onclick=()=>{selectedAgent=null;renderDashboard()};filters.append(clear)}
+ lowerHead.append(h,filters);lower.append(lowerHead);const log=document.createElement('div');log.className='cockpit-log';
+ const filtered=scoped.filter(e=>(eventFilter==='all'||e.type===eventFilter)&&(!selectedAgent||e.agent===selectedAgent));
+ if(!filtered.length){const none=document.createElement('div');none.className='cockpit-empty';none.textContent='Aucun événement pour ce filtre.';log.append(none)}
+ for(const e of [...filtered].reverse().slice(0,35)){const line=document.createElement('div');line.className='cockpit-log-row';const time=document.createElement('span');time.className='cockpit-log-time';time.textContent=e.time;const ag=document.createElement('span');ag.className='cockpit-log-agent';ag.textContent=e.agent;const detail=document.createElement('span');detail.className='cockpit-log-detail';detail.textContent=e.type.toUpperCase()+(e.target?' → '+e.target:'')+(e.detail?' · '+e.detail:'');line.append(time,ag,detail);log.append(line)}lower.append(log);root.append(lower);
 }
 function renderTrace(){
  const scoped=trace.filter(e=>e.conversationId===state.active),nodes=$('traceNodes'),events=$('traceEvents');
@@ -280,7 +394,7 @@ $('chatForm').addEventListener('submit',e=>{e.preventDefault();submit()});
 prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submit()}});
 $('newConversation').onclick=start;$('menuToggle').onclick=()=>app.classList.toggle('menu-open');
 $('fontUp').onclick=()=>setFont(fontScale+.1);$('fontDown').onclick=()=>setFont(fontScale-.1);
-$('traceToggle').onclick=()=>toggleTrace();$('traceClose').onclick=()=>toggleTrace(false);
+$('traceToggle').onclick=()=>{toggleTrace();$('settingsPanel').hidden=true;$('settingsToggle').setAttribute('aria-expanded','false')};$('traceClose').onclick=()=>toggleTrace(false);$('settingsToggle').onclick=()=>{const p=$('settingsPanel');p.hidden=!p.hidden;$('settingsToggle').setAttribute('aria-expanded',String(!p.hidden))};document.addEventListener('click',e=>{if(!e.target.closest('.top-right')){$('settingsPanel').hidden=true;$('settingsToggle').setAttribute('aria-expanded','false')}});
 window.AgentOS={
  // Temporary integration contract until the real backend API is established.
  // Dispatch via real WebSocket/SSE handlers, not fabricated frontend timers.

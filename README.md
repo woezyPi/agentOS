@@ -36,9 +36,14 @@ Mémoire projet : `AGENTS.md` (ou `CLAUDE.md`) du dossier, et `~/.claude_clone/A
 ```bash
 cc-web            # serveur local sur 127.0.0.1:8765 ; ouvre l'URL affichée (elle contient le jeton)
 ```
-Front : `claude_clone/static/index.html` (flux temps réel, plan, rapports d'agents, **confirmations avec diff**, choix de l'agent,
-posture challenge/direct, mode auto). Sécurité : écoute locale seulement, jeton par démarrage dans le fragment de l'URL,
+Front modulaire issu de `agentos_release` : `claude_clone/static/index.html`, `static/css/{base,agentos}.css` et `static/js/app.js`,
+servis sur `/static` par le même serveur et inclus dans le paquet Python (aucun build frontend requis).
+Flux temps réel, inspecteur des workers (activité, logs, fichiers, performances), plan, rapports d'agents, **confirmations avec diff**, choix de l'agent,
+posture challenge/direct, mode auto. Sécurité : écoute locale seulement, jeton par démarrage dans le fragment de l'URL,
 Host/Origin vérifiés, CSP stricte, le client n'envoie que des décisions (le serveur relit ce qui est réellement en attente).
+
+Recette navigateur hors ligne : `.venv/bin/pip install -e '.[dev]'`, puis
+`.venv/bin/python -m playwright install chromium` et `.venv/bin/python tests/test_browser.py`.
 
 ## Agents
 Le **superviseur** coordonne ; il appelle des sous-agents via `ask_agent(role, task, context)` (parallèles, qui ne voient

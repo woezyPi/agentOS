@@ -73,7 +73,6 @@ MAX_READ_BYTES = 200_000
 CONTEXT_COMPACT_TOKENS = 80_000  # au-delà (estimation), l'historique ancien est résumé
 CONTEXT_KEEP_TOKENS = 20_000     # taille approximative de la fin de conversation conservée telle quelle
 
-
 # --- Lecture des secrets ------------------------------------------------------
 # On ne lit QUE ces noms, jamais tout le fichier, et on ne les exporte pas dans
 # os.environ (sinon les commandes bash lancées par le LLM les hériteraient).

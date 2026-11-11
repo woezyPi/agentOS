@@ -31,6 +31,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi import Path as PathParam
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
@@ -437,9 +438,23 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         if not hmac.compare_digest(request.headers.get("x-cc-token", ""), token):
             raise HTTPException(401, "Jeton invalide ou absent")
 
-    app = FastAPI(title="claude-clone", lifespan=lifespan, dependencies=[Depends(guard_host)], docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="claude-clone", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     api = dict(dependencies=[Depends(guard_token)])
     nostore = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+
+    @app.middleware("http")
+    async def protect_requests(request: Request, call_next):
+        # Les dépendances FastAPI ne protègent pas les applications montées (StaticFiles).
+        try:
+            await guard_host(request)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=nostore)
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers.update(nostore)
+        return response
+
+    app.mount("/static", StaticFiles(directory=STATIC_INDEX.parent, check_dir=True), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index():

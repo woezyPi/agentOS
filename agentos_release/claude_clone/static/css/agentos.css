@@ -1,0 +1,67 @@
+
+/* AgentOS / direction originale : noir + jaune néon + rose néon ; sans gradient ni glow */
+:root{
+ --bg-primary:#08080B;--bg-secondary:#0D0D11;--bg-panel:#15151B;--bg-hover:#1D1D25;
+ --border-primary:#33333E;--border-subtle:#25252F;
+ --text-primary:#F1F1F4;--text-secondary:#B6B5C0;--text-muted:#898896;
+ --accent-primary:#F5FF3B;--accent-violet:#FF4FA3;--accent-blue:#B3B3C2;
+ --accent-warning:#F6C64A;--accent-error:#FF6077;--accent-success:#7BC6A0;
+ --orange:var(--accent-primary);--pink:var(--accent-violet);--sky:var(--text-secondary);--lime:var(--accent-primary);
+ --font-ui:'DM Sans',Inter,Arial,sans-serif;--font-code:'DM Mono',ui-monospace,monospace;
+}
+body{font-family:var(--font-ui)}
+/* Stable status: no animated logo, no misleading indefinite progress. */
+.walker .ground,.walker .leg,.walker .bodyg,.walker .headg,.agent-card .dot,.agent-card .thinking,.agent-card .step.run .s-st{animation:none!important}
+.status-bar i,.ctxbar i{transition:width .18s linear}
+.message.agent{border-left-color:var(--accent-violet)}
+.message.user{background:#161610;border-color:#343426;border-left-color:var(--accent-primary)}
+.message-content{font-size:16px;line-height:1.7}
+.agent-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr));gap:12px;align-items:start}
+.agent-card{--ac:var(--accent-primary)!important;border:1px solid var(--border-primary);border-top:2px solid var(--accent-primary);background:#111116;padding:16px;min-width:0;border-radius:7px}
+.agent-card.err{border-top-color:var(--accent-error)}
+.agent-card>header{gap:9px}
+.agent-card .dot{width:7px;height:7px}
+.agent-card>header b{font:600 13px/1.5 var(--font-ui);letter-spacing:0;color:var(--text-primary)}
+.agent-card .pill{border-color:#363641;color:var(--text-secondary);border-radius:4px;font-size:11px}
+.agent-card.run .pill{color:var(--accent-primary);border-color:#6b6f2a}
+.agent-card .task{font:14px/1.55 var(--font-ui);color:var(--text-secondary);border-left:0;padding:0;margin:12px 0}
+.agent-card .ac-peek{border-left:0;padding:10px 0 0;border-top:1px solid var(--border-subtle);font:12px/1.6 var(--font-code)}
+.agent-card .step{font:12px/1.55 var(--font-code);border-left:0;padding:3px 0;border-bottom:1px solid var(--border-subtle)}
+.agent-card .s-name{color:var(--text-primary)}.agent-card .s-sum .k{color:var(--text-muted)}
+.agent-card .live-text{background:#17171C!important;mask-image:none!important;-webkit-mask-image:none!important;border-left:2px solid var(--accent-primary);font-size:13px}
+.agent-inspect{display:block;margin:12px 0 0 auto;padding:7px 10px;border:1px solid #555549;background:transparent;color:var(--accent-primary);border-radius:4px;font:11px var(--font-code)}
+.agent-inspect:hover{background:#262817}
+.tool{border:1px solid var(--border-subtle);border-left:2px solid var(--border-primary);background:#121218;border-radius:5px;padding:9px 12px;margin:8px 0}
+.tool.ok{border-left-color:var(--accent-success)}.tool.err{border-left-color:var(--accent-error)}
+.tool-badge{background:#272730;color:var(--text-primary);padding:5px 7px}
+.tool.bash .tool-badge{background:var(--accent-primary);color:#0A0A0C}
+.tool.read .tool-badge{background:#35212F;color:#FF8ABF}
+.tool-cmd{font:14px/1.7 var(--font-code);background:#0C0C11;border-left-color:var(--accent-primary)}
+.tool pre.result{font:13.5px/1.65 var(--font-code);background:#0C0C11}
+.approval{background:#1A1017;border-color:#8D395F;border-radius:5px}
+.approval h4{color:var(--accent-violet)}
+.orch{background:#141419;border-radius:5px;border-left-color:var(--accent-violet)}
+.orch-title{color:var(--text-primary)}
+.status-line .thinking,.status-phase{color:var(--text-secondary)!important}
+.statusbar{font-size:11px;min-height:30px}
+.ctxline{font-size:11px}.ctxbar{height:6px;background:#2A2A31}.ctxbar i{background:var(--accent-primary)}
+.fileview{background:#0D0D12}.fileview header{background:#15151B}
+.fv-row.hit{background:#262418;box-shadow:inset 2px 0 var(--accent-primary)}
+/* inspector: distinct from existing file preview; occupies right, never changes chat default width */
+.agent-inspector{position:fixed;right:0;top:0;bottom:0;z-index:17;width:min(540px,95vw);background:#101015;border-left:1px solid #41414A;display:flex;flex-direction:column;box-shadow:-12px 0 32px #0008;resize:horizontal;overflow:auto;min-width:min(350px,90vw);max-width:96vw}
+.agent-inspector[hidden]{display:none}
+.ai-header{padding:18px 20px;border-bottom:1px solid var(--border-primary);display:flex;align-items:start;gap:10px;justify-content:space-between}
+.ai-heading{min-width:0}.ai-heading b{display:block;font:600 17px var(--font-ui);overflow-wrap:anywhere}.ai-heading small{display:block;margin-top:5px;font:11px/1.5 var(--font-code);color:var(--text-muted)}
+.ai-close{font:20px var(--font-ui);background:transparent;color:var(--text-secondary);padding:0 5px}
+.ai-tabs{display:flex;padding:0 12px;border-bottom:1px solid var(--border-primary);overflow:auto;gap:2px}
+.ai-tabs button{background:none;color:var(--text-muted);font:11px var(--font-code);padding:14px 9px;border-bottom:2px solid transparent;white-space:nowrap}
+.ai-tabs button.selected{color:var(--accent-primary);border-color:var(--accent-primary)}
+.ai-body{flex:1;overflow:auto;padding:20px;min-height:0}
+.ai-section{margin-bottom:22px}.ai-label{font:10px var(--font-code);letter-spacing:1px;color:var(--accent-violet);margin-bottom:9px}
+.ai-task{font:14px/1.65 var(--font-ui);color:var(--text-primary)}.ai-count{font:13px var(--font-code);color:var(--text-primary)}.ai-muted{font:12px/1.65 var(--font-ui);color:var(--text-muted)}
+.ai-event{display:flex;align-items:baseline;gap:9px;padding:10px 0;border-bottom:1px solid var(--border-subtle);font:12px/1.5 var(--font-code);min-width:0}
+.ai-event b{font-weight:500;white-space:nowrap}.ai-event span:last-child{color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ai-event-state{color:var(--accent-primary)}.ai-event-state.error{color:var(--accent-error)}
+.ai-pre,.ai-report{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.7 var(--font-code);color:var(--text-secondary);background:#0B0B0F;border:1px solid var(--border-subtle);padding:13px;max-height:380px;overflow:auto}
+.ai-file{display:block;width:100%;text-align:left;background:#181820;color:var(--accent-primary);font:12px var(--font-code);padding:12px;border-bottom:1px solid var(--border-primary)}
+@media(max-width:700px){.agent-inspector{width:100vw;max-width:100vw;min-width:0;resize:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.01ms!important}}

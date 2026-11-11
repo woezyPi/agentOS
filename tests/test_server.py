@@ -33,7 +33,18 @@ def test_security():
     c = make([])
     r = c.get("/")
     assert r.status_code == 200 and "default-src 'none'" in r.headers["content-security-policy"] and r.headers["x-frame-options"] == "DENY"
-    assert "AgentOS" in r.text and "/api/chat" in r.text
+    assert "AgentOS" in r.text and "/static/js/app.js" in r.text
+    js = c.get("/static/js/app.js")
+    assert js.status_code == 200 and "/api/chat" in js.text
+    assert "javascript" in js.headers["content-type"]
+    assert js.headers["cache-control"] == "no-store" and js.headers["x-content-type-options"] == "nosniff"
+    for path in ("/static/css/base.css", "/static/css/agentos.css"):
+        css = c.get(path)
+        assert css.status_code == 200 and "text/css" in css.headers["content-type"]
+    assert c.get("/static/js/app.js", headers={"host": "evil.example"}).status_code == 403
+    assert c.post("/static/js/app.js", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert c.get("/static/missing.js").status_code == 404
+    assert c.get("/static/%2e%2e/server.py").status_code == 404
     assert c.get("/", headers={"host": "evil.example"}).status_code == 403, "Host non autorisé (anti DNS-rebinding)"
     assert c.get("/api/meta").status_code == 401 and c.get("/api/meta", headers={"X-CC-Token": "x"}).status_code == 401
     assert c.get("/api/meta", headers=H).json()["workdir"]
