@@ -16,7 +16,7 @@
 
 # AgentOS
 
-**Une tour de contrôle locale pour vos agents de développement.**
+**iDE locale pour vos agents de développement.**
 
 Décrivez une tâche. Le superviseur la répartit entre des agents spécialisés, vous suivez leur activité et vous inspectez leurs résultats avant d’appliquer les changements. LiteLLM relie cette orchestration aux fournisseurs et aux modèles que vous choisissez.
 
