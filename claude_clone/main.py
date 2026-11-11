@@ -381,6 +381,30 @@ def _new_config(thread_id: str | None = None) -> dict:
     return {"configurable": {"thread_id": thread_id or uuid.uuid4().hex}, "recursion_limit": RECURSION_LIMIT}
 
 
+def _print_banner() -> None:
+    """Affiche l'ASCII art du package en dégradé vertical."""
+    art = Path(__file__).resolve().parent / "ascii-art.txt"
+    try:
+        lines = art.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return  # pas de bannière : on démarre quand même
+    non_empty = [i for i, l in enumerate(lines) if l.strip()]
+    if not non_empty:
+        return
+    # Dégradé vertical : couleurs de départ et de fin (RGB). Modifie ici pour changer le rendu.
+    start, end = (0x3D, 0xF0, 0xFF), (0xD1, 0x6B, 0xFF)  # cyan -> magenta
+    first, last = non_empty[0], non_empty[-1]
+    span = max(1, last - first)
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        t = (i - first) / span
+        r = round(start[0] + (end[0] - start[0]) * t)
+        g = round(start[1] + (end[1] - start[1]) * t)
+        b = round(start[2] + (end[2] - start[2]) * t)
+        console.print(Text(line, style=f"#{r:02x}{g:02x}{b:02x}"))
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(description="Assistant de code multi-agents (superviseur + codeur).")
     ap.add_argument("--auto", action="store_true", help="mode auto : approuve les actions sûres sans question (voir autopilot.py)")
@@ -423,6 +447,7 @@ async def main() -> int:
         memory = f" · mémoire : {', '.join(mem_files)}" if mem_files else ""
         auto_note = "\n[bold green]MODE AUTO[/bold green] : actions sûres approuvées sans question (/auto pour désactiver)" if auto else ""
         sandbox = "bash isolé ($HOME masqué)" if tools_mod.sandbox_enabled() else "[yellow]bash NON isolé[/yellow]"
+        _print_banner()
         console.print(Panel.fit(
             f"[bold]claude-clone[/bold]  ·  superviseur [cyan]{settings.supervisor_model}[/cyan]  ·  codeur [green]{settings.coder_model}[/green]\n"
             f"dossier de travail : {tools_mod.WORKDIR}\n{sandbox}{memory}{auto_note}\nposture : {mode} · skills : {len(sk)}" + (f" · {resumed}" if resumed else "") + f"\n[dim]{HELP}[/dim]",
