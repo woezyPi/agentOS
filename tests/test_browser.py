@@ -45,15 +45,35 @@ def main():
                 time.sleep(0.05)
             with sync_playwright() as p:
                 browser = p.chromium.launch()
-                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                context = browser.new_context(viewport={"width": 1440, "height": 1000})
+                page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 # La recette reste indépendante de Google Fonts et du réseau externe.
-                page.route("https://fonts.googleapis.com/**", lambda route: route.fulfill(status=200, body="", content_type="text/css"))
+                context.route("https://fonts.googleapis.com/**", lambda route: route.fulfill(status=200, body="", content_type="text/css"))
                 page.goto(f"http://127.0.0.1:{port}/#token=browser-test")
                 expect(page.locator("#status")).to_contain_text("CONNECTÉ")
                 assert page.evaluate("document.styleSheets.length") >= 2
+                theme = page.get_by_role("button", name="MODE JOUR")
+                expect(theme).to_have_attribute("aria-pressed", "false")
+                theme.click()
+                expect(theme).to_have_attribute("aria-pressed", "true")
+                assert page.evaluate("document.documentElement.dataset.theme") == "light"
+                assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(250, 250, 248)"
+                assert page.locator(".brand .logo").evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(16, 16, 20)"
+                page.reload()
+                expect(theme).to_have_attribute("aria-pressed", "true")
+                assert page.evaluate("localStorage.getItem('agentos-theme')") == "light"
                 page.locator("#delegation").select_option("max")
+                assert page.evaluate("localStorage.getItem('agentos-theme')") == "light"
+                other = page.context.new_page()
+                other.goto(f"http://127.0.0.1:{port}/")
+                expect(other.locator("#themeToggle")).to_have_attribute("aria-pressed", "true")
+                theme.click()
+                expect(theme).to_have_attribute("aria-pressed", "false")
+                expect(other.locator("#themeToggle")).to_have_attribute("aria-pressed", "false")
+                other.close()
+                assert page.evaluate("document.documentElement.dataset.theme") is None
                 page.locator("#prompt").fill("Inspecte puis écris le fichier de release.")
                 page.locator("#send").click()
                 expect(page.get_by_text("CONFIRMATION REQUISE", exact=True)).to_be_visible()
@@ -83,6 +103,11 @@ def main():
                 expect(page.locator("#sidebar")).to_be_visible()
                 expect(toggle).to_have_attribute("aria-expanded", "true")
                 page.set_viewport_size({"width": 390, "height": 844})
+                theme.click()
+                expect(theme).to_have_attribute("aria-pressed", "true")
+                theme_box, menu_box = theme.bounding_box(), toggle.bounding_box()
+                assert abs((theme_box["y"] + theme_box["height"] / 2) -
+                           (menu_box["y"] + menu_box["height"] / 2)) < 1
                 expect(toggle).to_have_attribute("aria-expanded", "false")
                 toggle.click()
                 expect(page.locator("#sidebarClose")).to_be_visible()

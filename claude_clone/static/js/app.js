@@ -6,6 +6,19 @@ const skillSel=$('skill'),ctxLine=$('ctxLine'),ctxText=$('ctxText'),ctxFill=$('c
 const app=$('app'),feed=$('feed'),threads=$('threads'),prompt=$('prompt'),agent=$('agent'),modeSel=$('mode'),deleg=$('delegation'),autoBox=$('auto'),sendBtn=$('send'),statusEl=$('status'),foot=$('foot');
 function makeId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():(Date.now().toString(16)+'-'+Math.random().toString(16).slice(2,10)).padEnd(12,'0')}
 
+const themeKey='agentos-theme',themeToggle=$('themeToggle');
+function paintTheme(light){
+ if(light)document.documentElement.dataset.theme='light';else delete document.documentElement.dataset.theme;
+ themeToggle.setAttribute('aria-pressed',String(light));
+ themeToggle.title=light?'Activer le mode nuit':'Activer le mode jour';
+}
+paintTheme(document.documentElement.dataset.theme==='light');
+themeToggle.addEventListener('click',()=>{
+ const light=document.documentElement.dataset.theme!=='light';paintTheme(light);
+ try{localStorage.setItem(themeKey,light?'light':'dark')}catch(e){console.warn('Sauvegarde du thème impossible',e)}
+});
+addEventListener('storage',e=>{if(e.key===themeKey||e.key===null)paintTheme(e.newValue==='light')});
+
 // --- jeton : transmis dans le fragment de l'URL affichée par `cc-web` (jamais envoyé au serveur dans l'URL) ---
 let token='';
 try{const h=new URLSearchParams(location.hash.slice(1)).get('token');if(h){localStorage.setItem('cc-token',h);history.replaceState(null,'',location.pathname+location.search)}token=localStorage.getItem('cc-token')||''}catch{}
