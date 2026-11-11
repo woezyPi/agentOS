@@ -63,7 +63,22 @@ function paintStatusbar(){
   const next=parts.join(' · ');if(sb.textContent!==next)sb.textContent=next;
 }
 setInterval(()=>{if(busy){document.querySelectorAll('.status-time').forEach(e=>e.textContent=tickText());paintProgress()}paintStatusbar()},500);
-function closeMenu(){app.classList.remove('menu-open')}
+const sidebarMedia=matchMedia('(max-width:850px)'),sidebarKey='agentos-sidebar-collapsed';
+try{app.classList.toggle('sidebar-collapsed',localStorage.getItem(sidebarKey)==='1')}catch{}
+function paintSidebar(){
+ const visible=sidebarMedia.matches?app.classList.contains('menu-open'):!app.classList.contains('sidebar-collapsed');
+ const toggle=$('menuToggle'),label=(visible?'Masquer':'Afficher')+' les conversations';
+ toggle.setAttribute('aria-expanded',String(visible));toggle.setAttribute('aria-label',label);toggle.title=label;
+ $('sidebar').inert=!visible;
+}
+function closeMenu(){app.classList.remove('menu-open');paintSidebar()}
+function toggleSidebar(){
+ if(sidebarMedia.matches)app.classList.toggle('menu-open');
+ else{app.classList.toggle('sidebar-collapsed');try{localStorage.setItem(sidebarKey,app.classList.contains('sidebar-collapsed')?'1':'0')}catch{}}
+ paintSidebar();
+}
+sidebarMedia.addEventListener('change',closeMenu);
+paintSidebar();
 function start(){closeAgentInspector();ctxInfo=null;const c={id:makeId(),title:'Nouvelle conversation',messages:[],created:Date.now()};state.conversations.unshift(c);state.active=c.id;save();render();closeMenu();prompt.focus()}
 function select(id){if(busy||!state.conversations.some(c=>c.id===id))return;closeAgentInspector();ctxInfo=null;state.active=id;stickNext=true;save();render();closeMenu();syncPending();refreshCtx()}
 function remove(id){if(busy)return;const c=state.conversations.find(c=>c.id===id);if(!c||!confirm('Supprimer cette conversation (et son historique côté serveur) ?'))return;api('/api/threads/'+encodeURIComponent(id),{method:'DELETE'}).catch(()=>{});gone.add(id);state.conversations=state.conversations.filter(c=>c.id!==id);if(state.active===id)state.active=state.conversations[0]?.id??null;if(!state.active){start();return}save();render()}
@@ -201,7 +216,6 @@ function pvBody(kind,body){
   b1.onclick=set('split');b2.onclick=set('unified');bar.append(b1,b2);box.append(bar,content);paint();return box}
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
 
-const AGENT_COLORS={architect:'#d16bff',developer:'#b6ff3d',challenger:'#ffd23d',reviewer:'#ff4d6d',devops:'#3df0ff',data:'#3df0ff',writer:'#a7b0b8',researcher:'#ffd23d',coder:'#b6ff3d',worker:'#d16bff'};
 const cleanTask=t=>{t=String(t||'');const m=/^role=[^,]*,\s*task=([\s\S]*?)(?:,\s*context=[\s\S]*)?$/.exec(t);return (m?m[1]:t).replace(/⏎/g,' ').replace(/\s+/g,' ').trim()};
 function stepSum(sum){const f=document.createDocumentFragment(),re=/(?:^|, )([A-Za-z_]\w*)=/g;const hits=[];let m;while((m=re.exec(sum))){hits.push({k:m[1],at:m.index,vs:m.index+m[0].length})}
   if(!hits.length){f.append(sum);return f}
@@ -252,7 +266,7 @@ $('agentInspector').querySelectorAll('[data-inspector-tab]').forEach(btn=>btn.on
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('agentInspector').hidden)closeAgentInspector()});
 function agentCard(b){
   const run=b.status==='run',st=run?'run':b.status==='error'?'err':'ok',steps=b.steps||[];
-  const card=el('section','agent-card '+st);card.style.setProperty('--ac',AGENT_COLORS[b.agent]||'#c7fb5b');
+  const card=el('section','agent-card '+st);
   const head=el('header');const tg=el('button','ac-tg',b.expanded?'▾':'▸');tg.type='button';tg.title=b.expanded?'Masquer les détails':'Afficher les détails';tg.setAttribute('aria-expanded',b.expanded?'true':'false');head.append(tg,el('span','dot'),el('b','',label(b.agent)+(b.label?' · '+b.label:'')+(b.panel?' · PANEL':'')));if(b.panel)card.classList.add('wide');
   if(b.model&&!b.panel)head.append(el('span','pill model',b.model));
   const nTools=steps.filter(x=>x.k==='tool').length;
@@ -474,7 +488,7 @@ function renderMessage(m){
   if(text){const actions=el('div','message-actions');const copy=el('button','tiny-action','COPIER ↗');copy.type='button';copy.onclick=async()=>{try{await navigator.clipboard.writeText(text);copy.textContent='COPIÉ ✓'}catch{copy.textContent='COPIE IMPOSSIBLE'}};actions.append(copy);content.append(actions)}
   art.append(content);return art;
 }
-function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=el('div','thread'+(c.id===state.active?' active':''));const open=el('button','thread-title',c.title);open.style.cssText='flex:1;text-align:left;border:0;color:inherit;background:transparent;padding:0;cursor:pointer;font:inherit';open.title=c.title;open.onclick=()=>select(c.id);const del=el('button','delete-thread','×');del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);const tab=el('button','delete-thread','⧉');tab.title='Ouvrir dans une nouvelle fenêtre';tab.setAttribute('aria-label','Ouvrir '+c.title+' dans une nouvelle fenêtre');tab.onclick=()=>openTab(c.id);row.append(open,tab,del);threads.append(row)}}
+function renderThreads(){threads.replaceChildren();for(const c of state.conversations){const row=el('div','thread'+(c.id===state.active?' active':''));const open=el('button','thread-title',c.title);open.title=c.title;open.onclick=()=>select(c.id);const del=el('button','delete-thread','×');del.title='Supprimer';del.setAttribute('aria-label','Supprimer '+c.title);del.onclick=()=>remove(c.id);const tab=el('button','delete-thread','⧉');tab.title='Ouvrir dans une nouvelle fenêtre';tab.setAttribute('aria-label','Ouvrir '+c.title+' dans une nouvelle fenêtre');tab.onclick=()=>openTab(c.id);row.append(open,tab,del);threads.append(row)}}
 let stickNext=false;
 function render(){
   const c=current();renderThreads();$('conversationTitle').textContent=c?.title?.toUpperCase()||'NOUVELLE CONVERSATION';
@@ -750,7 +764,8 @@ async function init(){
 $('chatForm').addEventListener('submit',e=>{e.preventDefault();submit()});
 prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submit()}});
 prompt.addEventListener('input',()=>{prompt.style.height='auto';prompt.style.height=Math.min(prompt.scrollHeight,220)+'px'});
-$('newConversation').onclick=()=>{if(!busy)start()};$('newTab').onclick=()=>openTab();$('menuToggle').onclick=()=>app.classList.toggle('menu-open');
+$('newConversation').onclick=()=>{if(!busy)start()};$('newTab').onclick=()=>openTab();$('menuToggle').onclick=toggleSidebar;
+$('sidebarClose').onclick=()=>{if(sidebarMedia.matches)closeMenu();else toggleSidebar();$('menuToggle').focus()};
 if(!current()||wantNew)start();else render();
 init();
 })();
