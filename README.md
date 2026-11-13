@@ -153,7 +153,7 @@ Ce mode impose une **liste fermée côté serveur**, en complément des instruct
 | --- | --- | --- |
 | Supervision et validation | `superviseur`, `agent_validation` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
 | Code | `agent_code`, `worker` | `cohere/north-mini-code:free` |
-| Recherche | `agent_recherche`, `worker_secours` | `liquid/lfm-2.5-2.6b:free` |
+| Recherche | `agent_recherche`, `worker_secours` | `liquid/lfm-3-1.7b:free` |
 | Rédaction | `agent_redaction` | `google/gemma-4-31b-it:free` |
 
 À l’activation, AgentOS vérifie que ces modèles figurent dans le catalogue OpenRouter, déclarent des tarifs nuls et prennent en charge les appels d’outils. Si ces vérifications échouent, l’activation est refusée. Une route payante ou hors liste est bloquée avant l’appel. Les clés des fournisseurs inutilisés ne sont pas transmises au proxy, et le retour à une connexion directe potentiellement payante est bloqué tant que ce mode reste actif.

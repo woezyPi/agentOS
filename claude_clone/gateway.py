@@ -29,7 +29,7 @@ KEY_NAMES = {p: p.upper() + "_API_KEY" for p in PROVIDERS if p != "ollama"}
 ROLE_ALIASES = {"supervisor": "superviseur", "coder": "superviseur", "researcher": "worker", "worker": "worker", **{r: "worker" for r in ("architect", "developer", "reviewer", "challenger", "devops", "data", "writer")}}
 FREE_MODELS = {
     "code": "cohere/north-mini-code:free",
-    "research": "liquid/lfm-2.5-2.6b:free",
+    "research": "liquid/lfm-3-1.7b:free",
     "writing": "google/gemma-4-31b-it:free",
     "validation": "nvidia/nemotron-3-ultra-550b-a55b:free",
 }
@@ -100,6 +100,14 @@ def read_config() -> dict:
     raw = None
     try:
         raw = json.loads((STATE_DIR / "settings.json").read_text())
+        # Preserve saved aliases, fallbacks and activation when retiring a preset model.
+        if isinstance(raw, dict) and raw.get("free_only") is True and isinstance(raw.get("routes"), list):
+            raw["routes"] = [
+                {**route, "model": FREE_MODELS["research"]}
+                if isinstance(route, dict) and route.get("provider") == "openrouter"
+                and route.get("model") == "liquid/lfm-2.5-2.6b:free" else route
+                for route in raw["routes"]
+            ]
         validated = GatewayConfig.model_validate(raw)
         return {"enabled": raw.get("enabled") is True, "free_only": validated.free_only is True, "routes": [r.model_dump() for r in validated.routes]}
     except (OSError, ValueError, TypeError):
@@ -242,7 +250,9 @@ def validate_free_catalogue(config: dict) -> None:
         response.raise_for_status()
         catalogue = {row["id"]: row for row in response.json()["data"] if isinstance(row, dict) and isinstance(row.get("id"), str)}
         for route in config["routes"]:
-            row = catalogue.get(route["model"], {})
+            if route["model"] not in catalogue:
+                raise ValueError("Budget 0 $ : modèle absent du catalogue OpenRouter : " + route["model"] + ". Mets à jour les routes dans Connexions.")
+            row = catalogue[route["model"]]
             pricing = row.get("pricing") or {}
             if "prompt" not in pricing or "completion" not in pricing or not all(Decimal(str(value)).is_zero() for value in pricing.values()):
                 raise ValueError("Budget 0 $ : gratuité non confirmée pour " + route["model"])

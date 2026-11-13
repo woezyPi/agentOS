@@ -167,6 +167,43 @@ class GatewayTests(unittest.TestCase):
         with patch.object(G.httpx,'get',side_effect=httpx.ConnectError('offline')):
             with self.assertRaises(ValueError): G.validate_free_catalogue(config)
 
+    def test_retired_free_research_model_migrates_saved_routes(self):
+        config = {**G.free_defaults(), 'enabled': True}
+        config['routes'][0]['fallback'] = 'agent_recherche'
+        for route in config['routes']:
+            if route['model'] == G.FREE_MODELS['research']:
+                route['model'] = 'liquid/lfm-2.5-2.6b:free'
+        G.write_config(config)
+        migrated = G.read_config()
+        self.assertTrue(migrated['enabled'])
+        self.assertTrue(migrated['free_only'])
+        expected = [dict(route) for route in config['routes']]
+        for route in expected:
+            if route['model'] == 'liquid/lfm-2.5-2.6b:free':
+                route['model'] = G.FREE_MODELS['research']
+        self.assertEqual(migrated['routes'], expected)
+        request = httpx.Request('GET', 'https://openrouter.ai/api/v1/models')
+        catalogue = {'data': [
+            {'id': model, 'pricing': {'prompt': '0', 'completion': '0'}, 'supported_parameters': ['tools']}
+            for model in G.FREE_MODELS.values()
+        ]}
+        with patch.object(G.httpx, 'get', return_value=httpx.Response(200, request=request, json=catalogue)):
+            G.validate_free_catalogue(migrated)
+        proxy_models = [row['litellm_params']['model'] for row in G.proxy_config(migrated)['model_list']]
+        self.assertIn('openrouter/' + G.FREE_MODELS['research'], proxy_models)
+        self.assertNotIn('openrouter/liquid/lfm-2.5-2.6b:free', proxy_models)
+
+        # The migration is restricted to the strict preset.
+        config['free_only'] = False
+        G.write_config(config)
+        self.assertEqual(G.read_config()['routes'], config['routes'])
+
+    def test_zero_budget_rejects_missing_model_with_actionable_error(self):
+        request = httpx.Request('GET', 'https://openrouter.ai/api/v1/models')
+        with patch.object(G.httpx, 'get', return_value=httpx.Response(200, request=request, json={'data': []})):
+            with self.assertRaisesRegex(ValueError, 'modèle absent du catalogue OpenRouter.*Connexions'):
+                G.validate_free_catalogue(G.free_defaults())
+
     @unittest.skipUnless(G.executable(), 'Install cc-gateway --install for the lifecycle test')
     def test_native_manager_lifecycle_without_inference(self):
         routes = G.defaults()['routes']
