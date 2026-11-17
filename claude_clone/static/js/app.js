@@ -468,6 +468,16 @@ function linkifyPaths(root){
 const fileview=$('fileview'),fvBody=$('fvBody');let fvPath='',fvLine=0;
 function toast(t){document.querySelectorAll('.toast').forEach(x=>x.remove());const e=el('div','toast',t);document.body.append(e);setTimeout(()=>e.remove(),3500)}
 function closeFile(){fileview.hidden=true}
+// Largeur du visionneur : poignée à glisser (bord gauche) ou bouton ÉLARGIR ; mémorisée.
+const FVW='cc-fv-width',fvMax=()=>Math.floor(innerWidth*.98),fvMin=360;
+function setFvWidth(w,save){w=Math.max(fvMin,Math.min(fvMax(),Math.round(w)));fileview.style.setProperty('--fv-w',w+'px');$('fvWide').setAttribute('aria-pressed',String(w>=fvMax()-24));if(save){try{localStorage.setItem(FVW,String(w))}catch{}}return w}
+try{const w=parseInt(localStorage.getItem(FVW),10);if(w>0)setFvWidth(w)}catch{}
+$('fvWide').onclick=()=>setFvWidth(parseInt(getComputedStyle(fileview).width,10)>=fvMax()-24?760:fvMax(),true);
+$('fvGrip').ondblclick=()=>$('fvWide').click();
+$('fvGrip').addEventListener('pointerdown',e=>{e.preventDefault();const g=$('fvGrip');g.setPointerCapture(e.pointerId);g.classList.add('drag');document.body.classList.add('fv-resizing');
+  const move=ev=>setFvWidth(innerWidth-ev.clientX,false),up=()=>{g.removeEventListener('pointermove',move);g.removeEventListener('pointerup',up);g.removeEventListener('pointercancel',up);g.classList.remove('drag');document.body.classList.remove('fv-resizing');setFvWidth(parseInt(getComputedStyle(fileview).width,10),true)};
+  g.addEventListener('pointermove',move);g.addEventListener('pointerup',up);g.addEventListener('pointercancel',up)});
+addEventListener('resize',()=>{if(!fileview.hidden)setFvWidth(parseInt(getComputedStyle(fileview).width,10))});
 function showFile(j,line){
   fvPath=j.path;fvLine=line||0;$('fvPath').textContent=j.path+(line?':'+line:'');$('fvEditor').href=j.editor;fvBody.replaceChildren();
   const lines=j.text.split('\n'),cap=6000,isMd=/\.(md|markdown|mdx)$/i.test(j.path),tk=hlLines(j.text,langOfPath(j.path));
@@ -785,6 +795,13 @@ async function gatewayPane(){
 }
 
 // --- Studio · MODÈLES : suggestions du fournisseur et identifiants libres ---
+function aliasPicker(avail,cur,emptyLabel){
+  // LiteLLM : on ne choisit que parmi les alias exposés par le proxy (le serveur refuse tout autre identifiant).
+  const c=document.createElement('select');
+  if(emptyLabel!==undefined){const o=document.createElement('option');o.value='';o.textContent=emptyLabel;c.append(o)}
+  for(const m of avail){const o=document.createElement('option');o.value=m.id;o.textContent=m.name&&m.name!==m.id?m.name:m.id;c.append(o)}
+  if(cur&&!avail.some(m=>m.id===cur)){const o=document.createElement('option');o.value=cur;o.textContent=cur+' (alias introuvable)';c.append(o)}
+  c.value=cur||'';return c}
 async function modelsPane(force){
   studioList.replaceChildren();studioForm.replaceChildren();
   studioList.append(el('p','studio-note','Choisis ou saisis le modèle de chaque agent. Les suggestions viennent de ton fournisseur ; tu peux aussi entrer un identifiant complet, par exemple fournisseur/modele. Les modèles de repli restent inchangés.'));
@@ -794,7 +811,9 @@ async function modelsPane(force){
   const suggestions=document.createElement('datalist');suggestions.id='availableModels';
   for(const m of avail){const option=document.createElement('option');option.value=m.id;option.label=m.window?Math.round(m.window/1000)+' k tokens':m.id;suggestions.append(option)}
   studioForm.append(suggestions);
+  metaCache.routing=j.routing;
   function picker(cur,optional){
+    if(j.routing==='litellm')return aliasPicker(avail,cur,optional?'— aucun —':undefined);
     const input=inp('text',cur);input.setAttribute('list','availableModels');input.autocomplete='off';input.spellcheck=false;
     input.placeholder=optional?'Facultatif — fournisseur/modele':'fournisseur/modele';return input}
   const msg=el('div','studio-msg');
@@ -805,6 +824,11 @@ async function modelsPane(force){
     if(j.routing==='litellm')nm.append(el('small','',modelDisplay(r.model)));
     const ctl=picker(r.model);ctl.setAttribute('aria-label','Modèle — '+r.title);
     row.append(nm,ctl,el('div','src '+(r.source==='modifié'?'mod':r.source==='env'?'env':''),r.source==='env'?'VARIABLE D’ENV':r.source.toUpperCase()));studioForm.append(row);rows.push([r,ctl])}
+  const customRows=[];
+  if((j.custom||[]).length){studioForm.append(el('div','mhead','AGENTS PERSONNALISÉS'));
+    for(const r of j.custom){const row=el('div','mrow'),nm=el('div','nm',r.title);nm.append(el('small','',r.key));
+      const ctl=j.routing==='litellm'?aliasPicker(avail,r.model,'Modèle par défaut'):picker(r.model,true);if(j.routing!=='litellm')ctl.placeholder='Vide = modèle par défaut';ctl.setAttribute('aria-label','Modèle — '+r.title);
+      row.append(nm,ctl,el('div','src',r.model?'PERSONNALISÉ':'DÉFAUT'));studioForm.append(row);customRows.push([r,ctl])}}
   studioForm.append(el('div','mhead','PANEL DE REVUE (2 à 4 relecteurs de familles différentes)'));
   const pctl=[],pv=j.panel.models;
   for(let i=0;i<4;i++){const row=el('div','mrow'),c=picker(pv[i]||'',i>=2);c.setAttribute('aria-label','Modèle du relecteur '+'ABCD'[i]);pctl.push(c);row.append(el('div','nm','Relecteur '+'ABCD'[i]),c,el('div','src '+(j.panel.source==='modifié'?'mod':j.panel.source==='env'?'env':''),i===0?(j.panel.source==='env'?'VARIABLE D’ENV':j.panel.source.toUpperCase()):''));studioForm.append(row)}
@@ -812,8 +836,9 @@ async function modelsPane(force){
   const save=btn('ENREGISTRER ↗','send',async()=>{
     const assignments={};for(const [r,c] of rows)if(c.value.trim()!==r.model){if(!c.value.trim()){msg.className='studio-msg';msg.textContent='Renseigne le modèle de '+r.title+'.';c.focus();return}assignments[r.key]=c.value.trim();}
     const panel=pctl.map(c=>c.value.trim()).filter(Boolean),panelChanged=JSON.stringify(panel)!==JSON.stringify(pv);
-    if(!Object.keys(assignments).length&&!panelChanged){msg.className='studio-msg';msg.textContent='Rien à enregistrer.';return}
-    if(await put('/api/models',{assignments,panel:panelChanged?panel:null},msg)){flash='✓ Enregistré — pris en compte immédiatement (les tours en cours finissent avec l’ancien modèle).';await modelsPane();init()}});
+    const custom={};for(const [r,c] of customRows)if(c.value.trim()!==r.model)custom[r.key]=c.value.trim();
+    if(!Object.keys(assignments).length&&!panelChanged&&!Object.keys(custom).length){msg.className='studio-msg';msg.textContent='Rien à enregistrer.';return}
+    if(await put('/api/models',{assignments,panel:panelChanged?panel:null,custom},msg)){flash='✓ Enregistré — pris en compte immédiatement (les tours en cours finissent avec l’ancien modèle).';await modelsPane();await refreshRoles();init()}});
   const reset=btn('RÉINITIALISER TOUT','choice',async()=>{if(!confirm('Effacer les choix enregistrés et reprendre les modèles de l’environnement ou les valeurs par défaut ?'))return;
     try{const r=await api('/api/models/reset',{method:'POST',body:'{}'});if(r.ok){flash='Modèles par défaut restaurés.';await modelsPane();init()}else msg.textContent=detailMsg(await r.json().catch(()=>({})),r.status)}catch(e){msg.textContent='Connexion impossible : '+e.message}});
   actions(msg,[save,reset]);
@@ -879,10 +904,12 @@ async function skillForm(it){
 }
 async function agentForm(it){
   const ro=!!it&&!it.editable,d=it||{};
-  const key=inp('text',d.key,!!it),title=inp('text',d.title,ro),desc=ta(d.description||(ro?d.summary:''),ro),model=inp('text',d.model||'',ro),steps=inp('number',d.max_steps??8,ro),temp=inp('number',d.temperature??'',ro),prompt=ta(d.prompt,ro,true);
+  const key=inp('text',d.key,!!it),title=inp('text',d.title,ro),desc=ta(d.description||(ro?d.summary:''),ro),modelText=inp('text',d.model||'',ro),steps=inp('number',d.max_steps??8,ro),temp=inp('number',d.temperature??'',ro),prompt=ta(d.prompt,ro,true);
   key.placeholder='auditeur-secu  (a-z, 0-9, tirets)';title.placeholder='Auditeur sécurité';desc.rows=2;desc.placeholder='Ce que fait l’agent et quand l’utiliser (le superviseur le lit pour le choisir)';
-  model.placeholder=ro?(d.effective_model||''):'vide = '+((metaCache.models||[])[0]||'modèle par défaut');model.setAttribute('list','modelList');
-  try{if(!(metaCache.available||[]).length){const r=await api('/api/models');if(r.ok)metaCache.available=(await r.json()).available||[]}}catch{}
+    try{if(!(metaCache.available||[]).length||metaCache.routing===undefined){const r=await api('/api/models');if(r.ok){const mj=await r.json();metaCache.available=mj.available||[];metaCache.routing=mj.routing}}}catch{}
+  let model=modelText;
+  if(!ro&&metaCache.routing==='litellm'){model=aliasPicker(metaCache.available||[],d.model||'','Modèle par défaut (alias du superviseur)');model.setAttribute('aria-label','Modèle de l’agent')}
+  if(model===modelText){model.placeholder=ro?(d.effective_model||''):'vide = '+((metaCache.models||[])[0]||'modèle par défaut');model.setAttribute('list','modelList')}
   const dl=document.createElement('datalist');dl.id='modelList';for(const m of (metaCache.available||[]).map(x=>x.id).concat(metaCache.models||[])){const o=document.createElement('option');o.value=m;dl.append(o)}
   steps.min=1;steps.max=16;temp.min=0;temp.max=1;temp.step=0.1;temp.placeholder='défaut';prompt.placeholder='Tu es … Ta méthode : …';
   const msg=el('div','studio-msg');

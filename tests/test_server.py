@@ -296,6 +296,23 @@ def test_models_api_and_named_status():
         c.post("/api/models/reset", headers=H, json={"keys": ["panel"]})
         assert CFG.load_settings().panel_models == ("env/one", "env/two")
         del os.environ["PANEL_MODELS"]
+        # agents personnalisés : leur modèle se règle depuis le panneau Modèles (direct = identifiant libre, LiteLLM = alias seulement)
+        import claude_clone.agents as AG
+        old_agents = AG.USER_AGENTS_DIR; AG.USER_AGENTS_DIR = root / "agents"
+        try:
+            ag = {"title": "Auditeur", "description": "Audite la sécurité du code.", "model": "", "tools": ["read_file"], "max_steps": 4, "temperature": None, "prompt": "Tu audites le code avec méthode et rigueur."}
+            assert c.put("/api/agents/auditeur", headers=H, json=ag).status_code == 200
+            v = c.get("/api/models", headers=H).json(); assert v["custom"] == [{"key": "auditeur", "title": "Auditeur", "model": ""}]
+            assert c.put("/api/models", headers=H, json={"custom": {"inconnu": "a/m1"}}).status_code == 422
+            r = c.put("/api/models", headers=H, json={"custom": {"auditeur": "a/m1"}}); assert r.status_code == 200 and r.json()["custom"][0]["model"] == "a/m1"
+            assert {a["key"]: a for a in c.get("/api/agents", headers=H).json()["agents"]}["auditeur"]["tools"] == ["read_file"]  # le reste de l'agent est conservé
+            GW.write_config({**GW.defaults(), "enabled": True})
+            assert c.put("/api/models", headers=H, json={"custom": {"auditeur": "a/m1"}}).status_code == 422  # hors alias
+            assert c.put("/api/agents/auditeur", headers=H, json={**ag, "model": "a/m1"}).status_code == 422
+            assert c.put("/api/models", headers=H, json={"custom": {"auditeur": "worker"}}).status_code == 200
+            assert c.put("/api/models", headers=H, json={"custom": {"auditeur": ""}}).json()["custom"][0]["model"] == ""
+        finally:
+            AG.USER_AGENTS_DIR = old_agents; GW.write_config(GW.defaults())
         # statut NOMMÉ : qui travaille, avec quel modèle
         st = CFG.load_settings()
         txt = status_text("agents", [{"name": "ask_agent", "args": {"role": "reviewer"}}, {"name": "research", "args": {}}, {"name": "ask_agent", "args": {"role": "reviewer", "panel": True}}, {"name": "grep", "args": {}}], st)

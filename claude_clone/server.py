@@ -102,6 +102,7 @@ def check_agent(agent: str) -> None:
 class ModelsIn(BaseModel):
     assignments: dict[str, str] = Field(default_factory=dict, max_length=16)
     panel: list[str] | None = Field(default=None, max_length=4)
+    custom: dict[str, str] = Field(default_factory=dict, max_length=20)  # agent personnalisé → modèle ("" = modèle par défaut)
 
 
 class ModelsResetIn(BaseModel):
@@ -560,7 +561,18 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
         fb = {"supervisor": st.supervisor_fallbacks, "coder": st.coder_fallbacks, "researcher": st.research_fallbacks}
         return {"roles": [{"key": k, "title": titles.get(k, k), "model": eff[k], "default": GW.role_aliases()[k] if st.managed_gateway else DEFAULTS[k], "source": src[k], "env": CFG.ENV_OF[k], "fallbacks": list(fb.get(k, st.agent_fallbacks))} for k in CFG.ASSIGNABLE],
                 "panel": {"models": list(st.panel_models), "default": (["agent_validation", "agent_recherche"] if st.free_only else ["worker", "worker_secours"]) if st.managed_gateway else CFG.DEFAULT_PANEL_MODELS.split(","), "source": src["panel"]},
-                "available": available, "error": err, "free_only": st.free_only, "routing": "litellm" if st.managed_gateway else "direct", "openrouter": urlparse(st.supervisor_base_url).hostname == "openrouter.ai"}
+                "available": available, "error": err, "free_only": st.free_only, "routing": "litellm" if st.managed_gateway else "direct", "openrouter": urlparse(st.supervisor_base_url).hostname == "openrouter.ai",
+                "custom": [{"key": k, "title": r.title, "model": r.model} for k, r in get_roles().items() if not r.builtin]}
+
+    def routed_aliases() -> set[str] | None:
+        """Alias LiteLLM acceptés comme modèle, ou None en connexion directe (identifiant libre)."""
+        config = GW.read_config()
+        return {r["alias"] for r in config["routes"]} if GW.enabled() or config.get("free_only") else None
+
+    def check_agent_model(model: str) -> None:
+        allowed = routed_aliases()
+        if model and allowed is not None and model not in allowed:
+            raise HTTPException(422, "Choisis un alias LiteLLM (ou laisse vide pour le modèle par défaut).")
 
     @app.get("/api/gateway", **api)
     async def gateway_get():
@@ -608,7 +620,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
     @app.put("/api/models", **api)
     async def models_put(body: ModelsIn):
         ov = CFG.read_model_overrides()
-        allowed = {r["alias"] for r in GW.read_config()["routes"]} if GW.enabled() or GW.read_config().get("free_only") else None
+        allowed = routed_aliases()
         for key, model in body.assignments.items():
             if key not in CFG.ASSIGNABLE:
                 raise HTTPException(422, f"Rôle inconnu : {key}")
@@ -623,7 +635,18 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             if any(not CFG.MODEL_ID.fullmatch(m) or (allowed is not None and m not in allowed) for m in body.panel):
                 raise HTTPException(422, "Un identifiant de modèle du panel est invalide.")
             ov["panel"] = body.panel
+        customs = {k: r for k, r in get_roles().items() if not r.builtin}
+        for key, model in body.custom.items():
+            if key not in customs:
+                raise HTTPException(422, f"Agent personnalisé inconnu : {key}")
+            check_agent_model(model)
         CFG.write_model_overrides(ov)
+        for key, model in body.custom.items():
+            r = customs[key]
+            try:
+                save_user_agent(key, r.title, r.description, model, list(r.tools), r.max_steps, r.temperature, r.prompt)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
         rt.reload()
         return JSONResponse(await models_view(), headers=nostore)
 
@@ -728,6 +751,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
 
     @app.put("/api/agents/{key}", **api)
     async def agent_save(body: AgentIn, key: str = PathParam(pattern=NAME_PATTERN)):
+        check_agent_model(body.model)
         try:
             role = save_user_agent(key, body.title, body.description, body.model, body.tools, body.max_steps, body.temperature, body.prompt)
         except ValueError as exc:
