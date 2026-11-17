@@ -16,3 +16,5 @@ dist/
 *.p12
 .claude_clone/
 .venv-*/
+
+graphify-out/
