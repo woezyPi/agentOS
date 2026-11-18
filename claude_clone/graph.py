@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import httpx
 import asyncio
+import difflib
 import operator
 import re
 import time
@@ -59,7 +60,8 @@ from claude_clone.web import fetch_url, latest_version
 from claude_clone.memory import load_profile, load_project_memory
 from claude_clone.prompts import DEFAULT_DELEGATION, DEFAULT_MODE, DELEGATIONS, MODES
 from claude_clone.telemetry import TELEMETRY, UsageCallback
-from claude_clone.config import thinking_for, MAX_STEPS_PER_TURN, CONTEXT_COMPACT_TOKENS, CONTEXT_KEEP_TOKENS, MAX_RETRIES, MAX_OUTPUT_CHARS, Settings
+from claude_clone.config import (thinking_for, MAX_STEPS_PER_TURN, CONTEXT_COMPACT_TOKENS, CONTEXT_KEEP_TOKENS,
+    MAX_RETRIES, MAX_OUTPUT_CHARS, MAX_TOOL_CALLS_PER_MESSAGE, MAX_SUMMARY_DEPTH, MAX_SUMMARY_CHARS, Settings)
 from claude_clone.tools import (
     APPLY_TOOL_NAME,
     ASK_AGENT_TOOL_NAME,
@@ -91,6 +93,7 @@ class AgentState(TypedDict, total=False):
     retries: int                                         # sorties LLM invalides consécutives
     plan: list[dict]                                     # plan de travail [{content, status}]
     summary: str                                         # résumé des messages anciens (compaction)
+    summary_depth: int                                   # nombre de compactages successifs, borné
     dev_changes: list[dict]                              # jeux de modifications du développeur (id, files…), à appliquer après relecture
     coder_blocks: list[str]                              # blocs de code du dernier résultat du codeur (write_file coder_block=N)
 
@@ -150,6 +153,7 @@ Règles :
    un résultat médiocre comme un succès.
 4. Un appel d'outil à la fois quand ils dépendent les uns des autres ; appelle delegate_to_coder SEUL.
 5. Arguments d'outil en JSON strictement valide (guillemets doubles, \\n échappés).
+   Un appel d'outil n'existe QUE dans le champ structuré `tool_calls` de l'API : n'écris jamais un pseudo-appel dans le texte.
 6. Si la demande est ambiguë, pose une question courte plutôt que d'inventer un cahier des charges.
 7. Dès qu'une tâche a 3 étapes ou plus, appelle update_plan au début, puis à chaque étape terminée
    (une seule étape in_progress à la fois). Ne l'utilise pas pour une tâche triviale.
@@ -175,7 +179,8 @@ Règles :
 SUMMARY_PROMPT = """Résume ces échanges pour qu'un assistant de développement puisse continuer le travail sans
 l'historique : objectifs de l'utilisateur, décisions et contraintes, fichiers créés/modifiés (chemins exacts),
 commandes importantes et leurs résultats, erreurs rencontrées, état actuel et prochaines étapes.
-Dense, factuel, 600 mots maximum, en français. N'invente rien."""
+Dense, factuel, 600 mots maximum, en français. N'invente rien. Produis UN résumé canonique à plat : ne cite pas,
+n'imbrique pas et ne reproduis pas les titres d'un ancien résumé. Fusionne les doublons."""
 
 CODER_PROMPT = """Tu es l'Agent Codeur, expert en génération et modification de code.
 Tu reçois une tâche et un contexte. Réponds avec le résultat :
@@ -236,6 +241,41 @@ def transcript(messages: list[AnyMessage], per_message: int = 1500) -> str:
     return "\n".join(lines)
 
 
+def canonical_summary(text: str) -> str:
+    """Aplatit et déduplique un résumé avant de le conserver dans le checkpoint."""
+    text = re.sub(r"(?im)^#{1,6}\s*(résumé|summary)(?:\s+de la conversation[^\n]*)?\s*$", "", text).strip()
+    seen: set[str] = set()
+    kept: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        block = block.strip()
+        key = re.sub(r"\W+", " ", block.casefold()).strip()
+        repeated = key in seen or any(difflib.SequenceMatcher(None, key, old).ratio() >= 0.92 for old in seen)
+        if block and key and not repeated:
+            seen.add(key)
+            kept.append(block)
+    return "\n\n".join(kept)[:MAX_SUMMARY_CHARS].rstrip()
+
+
+def structured_call_error(ai: AIMessage) -> str | None:
+    """Valide l'enveloppe des vrais appels d'outils avant tout routage ou effet."""
+    calls = ai.tool_calls or []
+    if len(calls) > MAX_TOOL_CALLS_PER_MESSAGE:
+        return f"trop d'appels simultanés ({len(calls)}, max {MAX_TOOL_CALLS_PER_MESSAGE})"
+    ids: set[str] = set()
+    for call in calls:
+        cid, name, args = call.get("id"), call.get("name"), call.get("args")
+        if not isinstance(cid, str) or not cid.strip():
+            return "tool_call_id manquant ou invalide"
+        if cid in ids:
+            return f"tool_call_id dupliqué : {cid}"
+        ids.add(cid)
+        if not isinstance(name, str) or not name.strip():
+            return f"nom d'outil manquant pour {cid}"
+        if not isinstance(args, dict):
+            return f"arguments non structurés pour {name}"
+    return None
+
+
 PARALLEL_SAFE = frozenset({"read_file", "grep", "glob", "scan_stack", "use_skill", "check_models", "describe_agents"})  # lecture seule, sans effet de bord
 
 
@@ -294,12 +334,18 @@ def build_graph(
         """Un modèle injecté (tests) ou la liste préférence + repli, chacun avec peu de retries SDK."""
         if injected is not None:
             return ModelPool([("injecté", injected)])
+        models = list(dict.fromkeys(m for m in models if isinstance(m, str) and m.strip()))
+        if not models:
+            models = [getattr(settings, "supervisor_model", "")]
         if getattr(settings, "free_only", False):
             from claude_clone import gateway as GW
             allowed = {route["alias"] for route in GW.read_config()["routes"]}
             # Existing custom agents can carry a paid model name from direct mode.
             models = [model for model in models if model in allowed] or [settings.worker_model]
         retries = 0 if getattr(settings, "managed_gateway", False) else (1 if len(models) > 1 else 3)  # avec un repli, on bascule vite plutôt que d'insister
+        models = [m for m in models if m]
+        if not models:
+            raise ValueError(f"aucun modèle configuré pour le groupe {role}")
         return ModelPool([(m, make_llm(base_url, api_key, m, temperature, role, max_retries=retries, gateway_metadata=getattr(settings, "managed_gateway", False))) for m in models])
 
     supervisor_pool = pool(supervisor_llm, getattr(settings, "supervisor_base_url", ""), getattr(settings, "supervisor_api_key", ""),
@@ -340,11 +386,13 @@ def build_graph(
         return tools_mod.sandbox_enabled()
 
     def panel_members():
-        """[(lettre, modèle, pool à UN seul modèle)] — pas de repli : substituer un modèle par un autre ruinerait la diversité de familles."""
+        """Chaque membre conserve son modèle préféré, avec replis en cas de panne."""
         if panel_llms is not None:
             return [(chr(65 + i), f"stub-{i}", pool(llm, "", "", [], 0.2, f"panel-{chr(65 + i)}")) for i, llm in enumerate(panel_llms)]
         url, key = getattr(settings, "supervisor_base_url", ""), getattr(settings, "supervisor_api_key", "")
-        return [(chr(65 + i), m, pool(None, url, key, [m], 0.2, f"panel-{chr(65 + i)}")) for i, m in enumerate(list(getattr(settings, "panel_models", ()))[:4])]
+        fallbacks = list(getattr(settings, "agent_fallbacks", ()))
+        return [(chr(65 + i), m, pool(None, url, key, [m, *[f for f in fallbacks if f != m]], 0.2, f"panel-{chr(65 + i)}"))
+                for i, m in enumerate(list(getattr(settings, "panel_models", ()))[:4])]
 
     class RoleBook:
         """Rôles intégrés + personnalisés, construits À LA DEMANDE et reconstruits si leur définition change :
@@ -384,25 +432,29 @@ def build_graph(
             tools_mod.LOCAL_TOOLS_BY_NAME[t.name] = t
     supervisor = supervisor_pool.bind_tools([*LOCAL_TOOLS, *check_tools, *EXTRA_TOOLS, delegate_to_coder, research, ask_agent, spawn_workers, apply_dev_changes])
 
-    async def summarize(previous: str, msgs: list, focus: str = "") -> str:
+    async def summarize(previous: str, msgs: list, focus: str = "", depth: int = 0) -> str:
         """Résumé des messages anciens (modèle du superviseur, donc ses replis). `focus` : consigne de l'utilisateur."""
-        prompt = (SUMMARY_PROMPT + (f"\n\nConsigne prioritaire de l'utilisateur pour ce résumé : {focus}" if focus else "")
+        prompt = (SUMMARY_PROMPT + f"\n\nProfondeur de compaction : {min(depth + 1, MAX_SUMMARY_DEPTH)}/{MAX_SUMMARY_DEPTH}. "
+                  "La sortie remplace entièrement l'ancien résumé."
+                  + (f"\n\nConsigne prioritaire de l'utilisateur pour ce résumé : {focus}" if focus else "")
                   + (f"\n\n## Résumé existant\n{previous}" if previous else "") + "\n\n## Échanges à résumer\n" + transcript(msgs))
-        return as_text((await supervisor_llm.ainvoke([HumanMessage(prompt)], thinking=False)).content).strip()
+        return canonical_summary(as_text((await supervisor_llm.ainvoke([HumanMessage(prompt)], thinking=False)).content))
 
     # ---- Noeud : Superviseur ------------------------------------------------
     async def supervisor_node(state: AgentState, config: RunnableConfig) -> dict:
         retries = state.get("retries", 0)
         history, summary, extra = state["messages"], state.get("summary", ""), {}
+        summary_depth = min(state.get("summary_depth", 0), MAX_SUMMARY_DEPTH)
 
         # Compaction : on résume le début de la conversation et on le retire de l'état.
         cut = compaction_cut(history)
         if cut:
             try:
-                new_summary = await summarize(summary, history[:cut])
+                new_summary = await summarize(summary, history[:cut], depth=summary_depth)
                 if new_summary:
                     summary = new_summary
-                    extra = {"summary": summary, "errors": [f"Contexte compacté : {cut} messages résumés."]}
+                    extra = {"summary": summary, "summary_depth": min(summary_depth + 1, MAX_SUMMARY_DEPTH),
+                             "errors": [f"Contexte compacté : {cut} messages résumés."]}
                     removals = [RemoveMessage(id=m.id) for m in history[:cut]]
                     history = history[cut:]
             except Exception as exc:  # on continue sans compacter plutôt que de bloquer le tour
@@ -415,6 +467,7 @@ def build_graph(
             if "summary" in extra:
                 update["messages"] = [*removals, *update.get("messages", [])]
                 update["summary"] = extra["summary"]
+                update["summary_depth"] = extra["summary_depth"]
             update["errors"] = [*extra.get("errors", []), *update.get("errors", [])]
             return update
 
@@ -493,6 +546,15 @@ def build_graph(
             return out({
                 "messages": [cleaned, feedback],
                 "errors": [f"JSON d'outil invalide ({retries + 1}/{MAX_RETRIES}) : {details}"],
+                "retries": retries + 1,
+                "active_agent": "supervisor",
+            })
+
+        if call_error := structured_call_error(ai):
+            return out({
+                "messages": [AIMessage(content="[appel d'outil structuré rejeté]"),
+                             HumanMessage(f"[système] Appel d'outil refusé avant exécution : {call_error}. Réémets un appel valide ou réponds en texte.")],
+                "errors": [f"Appel d'outil invalide ({retries + 1}/{MAX_RETRIES}) : {call_error}"],
                 "retries": retries + 1,
                 "active_agent": "supervisor",
             })
@@ -828,18 +890,20 @@ def build_graph(
         if snap.next:
             return {"ok": False, "message": "Une confirmation est en attente : réponds-y avant de compacter."}
         history, summary = snap.values.get("messages", []), snap.values.get("summary", "")
+        depth = min(snap.values.get("summary_depth", 0), MAX_SUMMARY_DEPTH)
         before = count_tokens_approximately(history) + len(summary) // 3
         cut = compaction_cut(history, threshold=0)  # seuil nul : on garde seulement la fin récente
         if not cut:
             return {"ok": False, "message": "Rien à compacter : une seule demande en cours (la compaction coupe entre deux demandes)."}
         try:
-            new_summary = await summarize(summary, history[:cut], focus)
+            new_summary = await summarize(summary, history[:cut], focus, depth)
         except Exception as exc:
             return {"ok": False, "message": f"Compaction impossible ({type(exc).__name__}: {exc})"}
         if not new_summary:
             return {"ok": False, "message": "Le modèle n'a pas produit de résumé : rien n'a été modifié."}
         # as_node="tools" : même technique que la réparation des appels orphelins (n'ajoute aucune étape à exécuter)
-        await compiled.aupdate_state(cfg, {"messages": [RemoveMessage(id=m.id) for m in history[:cut]], "summary": new_summary}, as_node="tools")
+        await compiled.aupdate_state(cfg, {"messages": [RemoveMessage(id=m.id) for m in history[:cut]], "summary": new_summary,
+                                           "summary_depth": min(depth + 1, MAX_SUMMARY_DEPTH)}, as_node="tools")
         after = count_tokens_approximately(history[cut:]) + len(new_summary) // 3
         return {"ok": True, "removed": cut, "tokens_before": before, "tokens_after": after,
                 "message": f"Contexte compacté : {cut} messages résumés (≈ {before} → {after} tokens)."}

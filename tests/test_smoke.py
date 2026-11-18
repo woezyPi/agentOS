@@ -181,6 +181,7 @@ async def test_edit_grep_glob(tmp):
 
 async def test_compaction(tmp):
     from claude_clone import graph as G
+    assert G.canonical_summary("## Résumé\n\nAlpha beta gamma.\n\nAlpha beta gamma !") == "Alpha beta gamma."
     G.CONTEXT_COMPACT_TOKENS, G.CONTEXT_KEEP_TOKENS = 300, 150
     try:
         sup = FakeLLM([AIMessage(content="a" * 1500), AIMessage(content="RÉSUMÉ-OK"), AIMessage(content="fin")])
@@ -192,7 +193,30 @@ async def test_compaction(tmp):
     msgs = snap.values["messages"]
     assert snap.values["summary"] == "RÉSUMÉ-OK" and msgs[0].content == "tour 2" and msgs[-1].content == "fin", [m.content[:12] for m in msgs]
     assert "RÉSUMÉ-OK" in sup.calls[-1][0].content  # injecté dans le prompt système
+    assert snap.values["summary_depth"] == 1
     print("✓ compaction : début résumé et retiré, résumé injecté au prompt")
+
+
+async def test_structured_tool_call_guards(tmp):
+    many = AIMessage(content="", tool_calls=[
+        {"name": "read_file", "args": {"path": "x"}, "id": f"c{i}", "type": "tool_call"} for i in range(9)
+    ])
+    sup = FakeLLM([many, AIMessage(content="arrêt propre")])
+    snap = await drive(build_graph(supervisor_llm=sup, coder_llm=FakeLLM([])), cfg(), {"messages": [HumanMessage("x")]})
+    assert snap.values["messages"][-1].content == "arrêt propre"
+    assert any("trop d'appels" in e for e in snap.values["errors"])
+    assert not any(isinstance(m, ToolMessage) for m in snap.values["messages"]), "aucun outil ne doit être exécuté"
+    print("✓ validation structurelle avant routage : plafond d'appels, aucun effet")
+
+
+async def test_subagent_repeated_error_budget(tmp):
+    from claude_clone.research import run_subagent
+    bad = call("inconnu", {}, "bad")
+    llm = FakeLLM([bad, bad, bad, AIMessage(content="rapport partiel")])
+    report = await run_subagent("système", llm, llm, {}, "tâche", max_steps=8)
+    assert report == "rapport partiel" and len(llm.calls) == 4
+    assert "Arrêt automatique" in llm.calls[-1][-1].content and "répétée" in llm.calls[-1][-1].content
+    print("✓ sous-agent : arrêt automatique après erreurs répétées")
 
 
 async def test_per_call_denial_and_sqlite(tmp):
@@ -907,7 +931,8 @@ async def main():
         for t in (test_paths, test_bash, test_flow_delegate_write_approve, test_flow_refuse,
                   test_invalid_json_recovers, test_invalid_json_gives_up, test_api_failure,
                   test_mixed_and_unknown_and_badargs, test_coder_block_errors, test_edit_grep_glob,
-                  test_compaction, test_per_call_denial_and_sqlite, test_bash_sandbox, test_plan_memory_telemetry, test_auto_mode, test_step_budget, test_auto_multiline, test_failover,
+                  test_compaction, test_structured_tool_call_guards, test_subagent_repeated_error_budget,
+                  test_per_call_denial_and_sqlite, test_bash_sandbox, test_plan_memory_telemetry, test_auto_mode, test_step_budget, test_auto_multiline, test_failover,
                   test_ssrf_guard, test_research, test_mcp,
                   test_developer_sandbox, test_readonly_agent_tools, test_agents_flow, test_persona, test_auto_relaxed, test_doctor, test_budget_fallback, test_no_limit_by_default, test_thinking_and_parallel_tools, test_review_panel, test_workers_and_delegation, test_describe_agents, test_manual_compact_and_context, test_stack_scan, test_skills):
             await t(d)

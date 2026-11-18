@@ -11,6 +11,9 @@ import contextvars
 from datetime import date
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
+
+from claude_clone.config import MAX_SUBAGENT_ERRORS, MAX_SUBAGENT_TOKENS, MAX_SUBAGENT_TOOL_CALLS
 
 RESEARCH_PROMPT = """Tu es un sous-agent de recherche technologique en LECTURE SEULE. Aujourd'hui : {today}.
 Outils : latest_version (pypi / npm / github : version stable la plus récente + date), fetch_url (page web, JSON,
@@ -62,6 +65,11 @@ async def run_subagent(system_text: str, llm_with_tools, llm_plain, tools: dict,
     msgs: list = [HumanMessage(user_text)]
     cid = AGENT_CALL_ID.get()
     kw = {"config": {"tags": [f"agent:{cid}"]}} if cid else {}  # l'interface route les jetons vers la carte de CET agent
+    tool_calls = 0
+    token_spend = 0
+    consecutive_errors = 0
+    last_error_signature: tuple[str, ...] | None = None
+    stop_reason = ""
 
     async def call(tc: dict) -> ToolMessage:
         tool = tools.get(tc["name"])
@@ -76,21 +84,49 @@ async def run_subagent(system_text: str, llm_with_tools, llm_plain, tools: dict,
             return ToolMessage(f"ERREUR : {type(exc).__name__}: {exc}"[:TOOL_RESULT_LIMIT], tool_call_id=tc["id"], name=tc["name"], status="error")
 
     for _ in range(max_steps):
+        estimated = count_tokens_approximately([system, *msgs])
+        if token_spend + estimated >= MAX_SUBAGENT_TOKENS:
+            stop_reason = f"budget de tokens atteint (≈{token_spend + estimated}, max {MAX_SUBAGENT_TOKENS})"
+            break
         ai = await llm_with_tools.ainvoke([system, *msgs], thinking=thinking, **kw)
+        usage = getattr(ai, "usage_metadata", None) or {}
+        token_spend += int(usage.get("total_tokens") or (usage.get("input_tokens", 0) + usage.get("output_tokens", 0)) or estimated)
         if ai.invalid_tool_calls:  # JSON d'arguments invalide : on demande de réémettre
+            consecutive_errors += 1
+            signature = tuple(sorted(str(c.get("name") or "?") for c in ai.invalid_tool_calls))
+            if consecutive_errors >= MAX_SUBAGENT_ERRORS and signature == last_error_signature:
+                stop_reason = f"{MAX_SUBAGENT_ERRORS} sorties d'outil invalides répétées"
+                break
+            last_error_signature = signature
             msgs += [AIMessage(content=as_text(ai.content) or "[appel rejeté]"),
                      HumanMessage("[système] Arguments d'outil en JSON invalide. Réémets l'appel correctement.")]
             continue
         if not ai.tool_calls:
             return as_text(ai.content).strip() or "(rapport vide)"
+        if tool_calls + len(ai.tool_calls) > MAX_SUBAGENT_TOOL_CALLS:
+            stop_reason = f"budget d'appels d'outils atteint (max {MAX_SUBAGENT_TOOL_CALLS})"
+            break
         msgs.append(ai)
         if (thought := as_text(ai.content).strip()):
             emit_step(kind="thought", text=thought[:500])
         for tc in ai.tool_calls[:4]:
             emit_step(kind="tool_call", call=tc["id"], name=tc["name"], summary=_brief(tc["args"]))
-        msgs.extend(await asyncio.gather(*(call(tc) for tc in ai.tool_calls[:4])))
+        batch = list(await asyncio.gather(*(call(tc) for tc in ai.tool_calls[:4])))
+        tool_calls += len(ai.tool_calls)
+        msgs.extend(batch)
         for tc in ai.tool_calls[4:]:  # plafond de 4 appels parallèles : les autres reçoivent une réponse d'erreur
             msgs.append(ToolMessage("ERREUR : trop d'appels simultanés (max 4).", tool_call_id=tc["id"], status="error"))
 
-    final = await llm_plain.ainvoke([system, *msgs, HumanMessage("Budget d'outils épuisé : conclus avec ce que tu as, en signalant ce qui n'est pas vérifié.")], thinking=thinking, **kw)
+        errors = tuple(sorted(f"{m.name}:{m.content[:160]}" for m in batch if m.status == "error"))
+        if errors:
+            consecutive_errors = consecutive_errors + 1 if errors == last_error_signature else 1
+            last_error_signature = errors
+            if consecutive_errors >= MAX_SUBAGENT_ERRORS:
+                stop_reason = f"même erreur d'outil répétée {consecutive_errors} fois"
+                break
+        else:
+            consecutive_errors, last_error_signature = 0, None
+
+    reason = stop_reason or f"budget de {max_steps} tentatives atteint"
+    final = await llm_plain.ainvoke([system, *msgs, HumanMessage(f"Arrêt automatique : {reason}. Conclus avec ce que tu as, sans nouvel appel d'outil, en signalant ce qui n'est pas vérifié.")], thinking=thinking, **kw)
     return as_text(final.content).strip() or "(rapport vide)"
