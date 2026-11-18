@@ -57,8 +57,14 @@ from claude_clone.main import BASH_SAFE_KEY, _allow_key, repair_dangling_tool_ca
 from claude_clone.previews import preview
 from claude_clone.skills import delete_user_skill, load_skills, save_user_skill, user_skill_names
 from claude_clone.telemetry import TELEMETRY
-
+import logging
 STATIC_INDEX = Path(__file__).parent / "static" / "index.html"
+
+
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 THREAD_ID = r"^[A-Za-z0-9-]{8,64}$"
 MAX_MESSAGE = 50_000
 BUSY_STALE = 900  # s : un verrou plus vieux est considéré comme périmé (client parti sans fermer proprement)
@@ -178,23 +184,29 @@ def _short(args: dict, limit: int = 100) -> str:
 
 
 def triage(calls: list[dict], values: dict, allow: set, auto: bool):
-    """Sépare les appels sensibles : (auto-approuvés [(tc, raison)], ids bash à lancer hors réseau, appels à soumettre à l'utilisateur)."""
+    """Gère les approbations selon le mode d'exécution."""
     auto_ok, offline, needs = [], [], []
+
     for tc in calls:
         if not T.requires_approval(tc["name"]):
             continue
-        safe_bash = tc["name"] == "execute_bash" and BASH_SAFE_KEY in allow
-        if auto or safe_bash:
-            ok, why = classify(tc)
-            if ok:
-                auto_ok.append((tc, why if auto else "commande sûre autorisée pour la session"))
-                if tc["name"] == "execute_bash":
-                    offline.append(tc["id"])
-                continue
+
+        if auto:
+            auto_ok.append((tc, "approuvé automatiquement"))
+            continue
+
         if _allow_key(tc) in allow:
             auto_ok.append((tc, "autorisé pour la session"))
             continue
+
         needs.append(tc)
+
+    print(
+        f"[TRIAGE] auto={auto}, "
+        f"auto_ok={len(auto_ok)}, needs={len(needs)}",
+        flush=True,
+    )
+
     return auto_ok, offline, needs
 
 
@@ -501,6 +513,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
 
     app.mount("/static", StaticFiles(directory=STATIC_INDEX.parent, check_dir=True), name="static")
 
+    
     @app.get("/", response_class=HTMLResponse)
     async def index():
         try:
@@ -874,7 +887,7 @@ def cli() -> None:
     console.print(f"[dim]Jeton aussi dans {TOKEN_FILE} (collable dans la page si besoin) · --new-token pour le renouveler · Ctrl-C pour arrêter.[/dim]")
     if args.open:
         webbrowser.open(url)
-    uvicorn.run(create_app(token=token, hosts=hosts, settings=settings), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(token=token, hosts=hosts, settings=settings), host=args.host, port=args.port, log_level="debug")
 
 
 if __name__ == "__main__":

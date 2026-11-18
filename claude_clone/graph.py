@@ -1,4 +1,5 @@
-"""Graphe LangGraph : Superviseur + Agent Codeur + noeud d'outils.
+"""
+BGHNV CFDXGraphe LangGraph : Superviseur + Agent Codeur + noeud d'outils.
 
     START → supervisor ──┬─ (réponse finale / abandon) ─→ END
                ▲         ├─ (appels d'outils locaux) ───→ tools ─┐   ← interrupt_before
