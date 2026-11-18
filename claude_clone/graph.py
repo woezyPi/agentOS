@@ -45,7 +45,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from claude_clone import tools as tools_mod
-from claude_clone.failover import ModelPool, FREE_QUOTA_MESSAGE, daily_free_quota
+from claude_clone.failover import ModelPool, FREE_QUOTA_MESSAGE, FREE_MINUTE_MESSAGE, daily_free_quota, minute_free_quota
 from claude_clone import agent_tools as AT
 from claude_clone.doctor import make_check_models_tool
 from claude_clone import developer as DEV
@@ -522,7 +522,8 @@ def build_graph(
         except Exception as exc:  # réseau, auth, 4xx/5xx après retries du SDK
             # retries=MAX_RETRIES ⇒ le routeur arrête le tour (inutile de re-boucler).
             return out({
-                "errors": [FREE_QUOTA_MESSAGE if daily_free_quota(exc) else f"Superviseur injoignable : {type(exc).__name__}: {exc}"],
+                "errors": [FREE_QUOTA_MESSAGE if daily_free_quota(exc) else FREE_MINUTE_MESSAGE if minute_free_quota(exc)
+                           else f"Superviseur injoignable : {type(exc).__name__}: {exc}"],
                 "retries": MAX_RETRIES,
                 "active_agent": "supervisor",
             })
