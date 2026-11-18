@@ -33,6 +33,12 @@ def test_security():
     c = make([])
     r = c.get("/")
     assert r.status_code == 200 and "default-src 'none'" in r.headers["content-security-policy"] and r.headers["x-frame-options"] == "DENY"
+    thread = tid(99)
+    assert c.post("/api/steer", headers=H, json={"thread_id": thread, "message": "change de direction"}).status_code == 409
+    c.app.state.runtime.busy[thread] = 1.0
+    steer_r = c.post("/api/steer", headers=H, json={"thread_id": thread, "message": "change de direction"})
+    assert steer_r.status_code == 200 and c.app.state.runtime.steers[thread] == ["change de direction"]
+    c.app.state.runtime.busy.pop(thread, None); c.app.state.runtime.steers.pop(thread, None)
     assert "AgentOS" in r.text and "/static/js/app.js" in r.text
     js = c.get("/static/js/app.js")
     assert js.status_code == 200 and "/api/chat" in js.text
