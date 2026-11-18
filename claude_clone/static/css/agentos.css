@@ -323,3 +323,18 @@ body.fv-resizing { cursor: col-resize; user-select: none; }
 .ai-heading > b { display: flex; align-items: center; gap: 10px; }
 .ai-heading > b .agent-mark { width: 34px; height: 34px; }
 @media (max-width: 1100px) { .agent-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Pièces jointes du composeur et des messages */
+.attachments, .msg-files { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.attachments { margin-bottom: var(--space-2); }
+.msg-files { margin-top: var(--space-3); }
+.att-chip { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; padding: var(--space-1) var(--space-3); background: var(--bg-elevated); border: 1px solid var(--border-primary); border-radius: var(--radius-xs); color: var(--text-secondary); font: 11px var(--font-code); }
+.att-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.att-chip small { color: var(--text-muted); font-size: 10px; }
+.att-chip button { background: none; border: 0; color: var(--text-muted); cursor: pointer; font: 14px/1 var(--font-code); padding: 0 2px; }
+.att-chip button:hover { color: var(--text-primary); }
+.attach-btn { display: grid; place-items: center; flex: none; width: 30px; height: 30px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-xs); color: var(--text-secondary); cursor: pointer; }
+.attach-btn:hover { color: var(--text-primary); background: var(--bg-hover); border-color: var(--border-active); }
+.attach-btn .ui-icon { width: 16px; height: 16px; }
+.composer.drop { border-color: var(--accent-yellow); box-shadow: 0 0 0 3px var(--surface-yellow); }
+.composer-bottom .hint { flex: 1; }
