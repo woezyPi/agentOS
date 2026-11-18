@@ -16,10 +16,11 @@ from langchain_core.messages.utils import count_tokens_approximately
 from claude_clone.config import MAX_SUBAGENT_ERRORS, MAX_SUBAGENT_TOKENS, MAX_SUBAGENT_TOOL_CALLS
 
 RESEARCH_PROMPT = """Tu es un sous-agent de recherche technologique en LECTURE SEULE. Aujourd'hui : {today}.
-Outils : latest_version (pypi / npm / github : version stable la plus récente + date), fetch_url (page web, JSON,
+Outils : web_search (recherche Internet), latest_version (pypi / npm / github : version stable la plus récente + date), fetch_url (page web, JSON,
 README), read_file / grep / glob (code du projet, pour comparer avec ce qui est utilisé).
 Règles :
 - Privilégie les sources primaires (registres de paquets, releases GitHub, documentation officielle).
+- Commence par web_search si aucune URL n'est fournie, puis ouvre les meilleures sources avec fetch_url.
 - Ne devine jamais une version ni une date : si tu ne l'as pas vue dans un résultat d'outil, écris « non vérifié ».
 - Hôtes joignables depuis ce poste : pypi.org, registry.npmjs.org, github.com, api.github.com. Beaucoup d'autres
   répondent 407 (proxy) : change de source au lieu d'insister.

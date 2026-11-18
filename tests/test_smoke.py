@@ -370,6 +370,23 @@ async def test_ssrf_guard(tmp):
     print("✓ SSRF : loopback, privé, link-local, intranet, file://, identifiants, ports refusés ; HTML → texte")
 
 
+async def test_web_search(tmp):
+    from unittest.mock import AsyncMock, patch
+    from claude_clone import web
+    html = '''<html><body>
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.example.org%2Fguide">Guide officiel</a>
+      <div class="result__snippet">Documentation de référence.</div>
+      <a class="result__a" href="javascript:alert(1)">Lien dangereux</a>
+    </body></html>'''
+    with patch.object(web, "http_get", AsyncMock(return_value=("text/html", html))):
+        out = await web.web_search.ainvoke({"query": "documentation exemple", "max_results": 5})
+    assert "Guide officiel" in out and "https://docs.example.org/guide" in out and "Documentation de référence" in out
+    assert "javascript:" not in out
+    from claude_clone.agents import READONLY_TOOLS, get_roles
+    assert "web_search" in READONLY_TOOLS and "web_search" in get_roles()["researcher"].tools
+    print("✓ web_search : résultats titrés, liens dangereux filtrés, outil autorisé aux sous-agents")
+
+
 async def test_research(tmp):
     from claude_clone.research import run_research
     from claude_clone.tools import grep
@@ -933,7 +950,7 @@ async def main():
                   test_mixed_and_unknown_and_badargs, test_coder_block_errors, test_edit_grep_glob,
                   test_compaction, test_structured_tool_call_guards, test_subagent_repeated_error_budget,
                   test_per_call_denial_and_sqlite, test_bash_sandbox, test_plan_memory_telemetry, test_auto_mode, test_step_budget, test_auto_multiline, test_failover,
-                  test_ssrf_guard, test_research, test_mcp,
+                  test_ssrf_guard, test_web_search, test_research, test_mcp,
                   test_developer_sandbox, test_readonly_agent_tools, test_agents_flow, test_persona, test_auto_relaxed, test_doctor, test_budget_fallback, test_no_limit_by_default, test_thinking_and_parallel_tools, test_review_panel, test_workers_and_delegation, test_describe_agents, test_manual_compact_and_context, test_stack_scan, test_skills):
             await t(d)
     print("\nTous les tests passent.")

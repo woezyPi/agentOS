@@ -543,7 +543,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             raise HTTPException(500, "Interface introuvable")
         return HTMLResponse(html, headers={**nostore, "Content-Security-Policy": CSP, "X-Frame-Options": "DENY"})
 
-    tool_objs = {t.name: t for t in (*[T.LOCAL_TOOLS_BY_NAME[n] for n in ("read_file", "grep", "glob")], AT.git_diff, WEB.fetch_url, WEB.latest_version,
+    tool_objs = {t.name: t for t in (*[T.LOCAL_TOOLS_BY_NAME[n] for n in ("read_file", "grep", "glob")], AT.git_diff, WEB.web_search, WEB.fetch_url, WEB.latest_version,
                                      AT.sql_describe, AT.sql_query, AT.run_check)}
 
     def model_metadata():

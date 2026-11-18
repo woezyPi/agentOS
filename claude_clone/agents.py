@@ -44,12 +44,12 @@ class Role:
         return self.description or re.split(r"(?<=[.:])\s", self.prompt.strip(), maxsplit=1)[0][:220]
 
 
-RESEARCHER = Role("researcher", "Chercheur", """Rôle : chercheur / documentaliste, LECTURE SEULE. Outils : latest_version
-(pypi / npm / github), fetch_url (pages, JSON, README), read_file / grep / glob (code du projet à comparer).
+RESEARCHER = Role("researcher", "Chercheur", """Rôle : chercheur / documentaliste, LECTURE SEULE. Outils : web_search
+(recherche Internet), latest_version (pypi / npm / github), fetch_url (pages, JSON, README), read_file / grep / glob (code du projet à comparer).
 Privilégie les sources primaires (registres, releases GitHub, doc officielle). Hôtes joignables ici : pypi.org,
 registry.npmjs.org, github.com, api.github.com ; beaucoup d'autres répondent 407 (proxy) : change de source.
 Rapport : conclusions, « Sources » (URL + date de la donnée), « Incertitudes ».""",
-    ("fetch_url", "latest_version", "read_file", "grep", "glob"), 8, "yellow")
+    ("web_search", "fetch_url", "latest_version", "read_file", "grep", "glob"), 8, "yellow")
 
 ROLES: dict[str, Role] = {
     "architect": Role("architect", "Architecte", """Rôle : architecte logiciel. Décompose le problème, lis le code existant
@@ -125,7 +125,7 @@ ALL_ROLES: dict[str, Role] = {"researcher": RESEARCHER, **ROLES}
 USER_AGENTS_DIR = Path.home() / ".claude_clone" / "agents"
 # Seuls ces outils sont autorisables : TOUS en lecture seule. Ni écriture, ni terminal, ni délégation : un agent personnalisé
 # est un spécialiste d'analyse. (run_check = diagnostic en liste blanche stricte, sans redirection ni réseau.)
-READONLY_TOOLS = ("read_file", "grep", "glob", "git_diff", "fetch_url", "latest_version", "sql_describe", "sql_query", "run_check")
+READONLY_TOOLS = ("read_file", "grep", "glob", "git_diff", "web_search", "fetch_url", "latest_version", "sql_describe", "sql_query", "run_check")
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 MAX_CUSTOM, MAX_PROMPT, MAX_AGENT_FILE = 20, 8000, 20_000
 

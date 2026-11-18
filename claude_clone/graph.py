@@ -56,7 +56,7 @@ from claude_clone.stackscan import scan_stack
 from claude_clone.live import emit
 from claude_clone.panel import PANEL_ROLES, SYNTH_PROMPT, run_panel
 from claude_clone.research import AGENT_CALL_ID, RESEARCH_PROMPT, run_research, run_subagent
-from claude_clone.web import fetch_url, latest_version
+from claude_clone.web import fetch_url, latest_version, web_search
 from claude_clone.memory import load_profile, load_project_memory
 from claude_clone.prompts import DEFAULT_DELEGATION, DEFAULT_MODE, DELEGATIONS, MODES
 from claude_clone.telemetry import TELEMETRY, UsageCallback
@@ -356,7 +356,7 @@ def build_graph(
     supervisor_llm, coder_llm = supervisor_pool, coder_pool  # même interface (.ainvoke) que le modèle seul
 
     # Un pool (préférence + replis) et un jeu d'outils (= permissions) par rôle de sous-agent.
-    sub_tools_all = {t.name: t for t in (fetch_url, latest_version, AT.run_command, AT.run_check, AT.git_diff, AT.sql_describe, AT.sql_query,
+    sub_tools_all = {t.name: t for t in (web_search, fetch_url, latest_version, AT.run_command, AT.run_check, AT.git_diff, AT.sql_describe, AT.sql_query,
                                          *[x for x in LOCAL_TOOLS if x.name in ("read_file", "write_file", "edit_file", "grep", "glob")])}
 
     def role_setup(spec):
