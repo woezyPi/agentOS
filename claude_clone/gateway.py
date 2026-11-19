@@ -36,13 +36,21 @@ FREE_MODELS = {
 FREE_ROLE_ALIASES = {"supervisor": "superviseur", "coder": "agent_code", "researcher": "agent_recherche", "worker": "worker",
                      "architect": "agent_validation", "developer": "agent_code", "reviewer": "agent_validation", "challenger": "agent_validation",
                      "devops": "agent_code", "data": "agent_code", "writer": "agent_redaction"}
+FREE_FALLBACKS = {
+    "superviseur": "agent_recherche",
+    "worker": "worker_secours",
+    "agent_code": "agent_recherche",
+    "agent_recherche": "agent_redaction",
+    "agent_redaction": "worker_secours",
+    "agent_validation": "agent_recherche",
+}
 
 
 def free_defaults() -> dict:
     models = {"superviseur": FREE_MODELS["validation"], "worker": FREE_MODELS["code"], "worker_secours": FREE_MODELS["research"],
               "agent_code": FREE_MODELS["code"], "agent_recherche": FREE_MODELS["research"], "agent_redaction": FREE_MODELS["writing"], "agent_validation": FREE_MODELS["validation"]}
     return {"enabled": False, "free_only": True, "routes": [{"alias": alias, "provider": "openrouter", "model": model,
-             "fallback": "worker_secours" if alias in ("worker", "agent_code") else None} for alias, model in models.items()]}
+             "fallback": FREE_FALLBACKS.get(alias)} for alias, model in models.items()]}
 
 
 def role_aliases(config: dict | None = None) -> dict:
@@ -74,6 +82,9 @@ class GatewayConfig(BaseModel):
                 raise ValueError("Le profil Budget 0 $ nécessite les alias de code, recherche, rédaction et validation.")
             if any(r.provider != "openrouter" or r.model not in set(FREE_MODELS.values()) or not r.model.endswith(":free") for r in self.routes):
                 raise ValueError("Budget 0 $ : seuls les quatre modèles OpenRouter :free autorisés sont acceptés, secours compris.")
+            missing = [alias for alias in set(FREE_ROLE_ALIASES.values()) if alias != "worker_secours" and not next(r for r in self.routes if r.alias == alias).fallback]
+            if missing:
+                raise ValueError("Budget 0 $ : un secours est requis pour chaque groupe de modèles : " + ", ".join(sorted(missing)))
         links = {r.alias: r.fallback for r in self.routes}
         for route in self.routes:
             seen = {route.alias}
@@ -90,7 +101,7 @@ class GatewayConfig(BaseModel):
 
 def defaults() -> dict:
     return {"enabled": False, "free_only": False, "routes": [
-        {"alias": "superviseur", "provider": "deepseek", "model": "deepseek-flash", "fallback": None},
+        {"alias": "superviseur", "provider": "deepseek", "model": "deepseek-flash", "fallback": "worker_secours"},
         {"alias": "worker", "provider": "openrouter", "model": "nvidia/nemotron-3-ultra-550b-a55b:free", "fallback": "worker_secours"},
         {"alias": "worker_secours", "provider": "openrouter", "model": "google/gemma-4-31b-it:free", "fallback": None},
     ]}
@@ -103,9 +114,10 @@ def read_config() -> dict:
         # Preserve saved aliases, fallbacks and activation when retiring a preset model.
         if isinstance(raw, dict) and raw.get("free_only") is True and isinstance(raw.get("routes"), list):
             raw["routes"] = [
-                {**route, "model": FREE_MODELS["research"]}
-                if isinstance(route, dict) and route.get("provider") == "openrouter"
-                and route.get("model") == "liquid/lfm-2.5-2.6b:free" else route
+                ({**route,
+                  **({"model": FREE_MODELS["research"]} if route.get("provider") == "openrouter" and route.get("model") == "liquid/lfm-2.5-2.6b:free" else {}),
+                  "fallback": route.get("fallback") or FREE_FALLBACKS.get(route.get("alias"))}
+                 if isinstance(route, dict) else route)
                 for route in raw["routes"]
             ]
         validated = GatewayConfig.model_validate(raw)

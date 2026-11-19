@@ -419,7 +419,7 @@ class WorkerTask(BaseModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,30}$", description="Nom court et unique du worker (ex. « scan-config », « usages-store »).")
     goal: str = Field(min_length=10, max_length=2000, description="Action PRÉCISE et autonome à exécuter + ce qu'il doit rendre (le worker ne voit pas la conversation).")
     persona: str = Field(default="", max_length=500, description="Optionnel : spécialité du worker (« auditeur sécurité », « lecteur de tests »).")
-    tools: list[str] = Field(default_factory=lambda: ["read_file", "grep", "glob"], description="Outils en LECTURE SEULE : read_file, grep, glob, git_diff, fetch_url, latest_version, sql_describe, sql_query, run_check.")
+    tools: list[str] = Field(default_factory=lambda: ["read_file", "grep", "glob"], description="Outils en LECTURE SEULE : read_file, grep, glob, git_diff, web_search, fetch_url, latest_version, sql_describe, sql_query, run_check.")
 
 
 class WorkersArgs(BaseModel):

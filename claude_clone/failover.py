@@ -27,11 +27,19 @@ FREE_QUOTA_MESSAGE = (
     "Changer de variante :free ne rétablit pas ce quota. "
     "Attends sa réinitialisation, ou choisis un modèle auquel ton compte a accès dans Modèles."
 )
+FREE_MINUTE_MESSAGE = (
+    "Limite OpenRouter gratuite par minute atteinte. Le secours a été tenté s'il était disponible, mais les modèles "
+    ":free partagent souvent ce quota. Attends environ une minute puis relance, ou configure un secours chez un autre fournisseur."
+)
 
 
 def daily_free_quota(exc: BaseException) -> bool:
     """This explicit account-wide quota cannot be resolved by model failover."""
     return "free-models-per-day" in str(exc).lower()
+
+
+def minute_free_quota(exc: BaseException) -> bool:
+    return "free-models-per-min" in str(exc).lower() or "openrouter_free_tier_per_minute" in str(exc).lower()
 
 
 def switchable(exc: BaseException) -> bool:

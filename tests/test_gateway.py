@@ -105,6 +105,7 @@ class GatewayTests(unittest.TestCase):
 
     def test_zero_budget_rejects_paid_routes_and_disabling_gateway(self):
         routes = G.free_defaults()['routes']
+        self.assertTrue(all(r['fallback'] for r in routes if r['alias'] in set(G.FREE_ROLE_ALIASES.values()) and r['alias'] != 'worker_secours'))
         validated = G.GatewayConfig(free_only=True, routes=routes)
         for provider, model in [('deepseek','deepseek-flash'),('openrouter','openai/gpt-4o'),('openrouter','unlisted/test:free')]:
             invalid = [dict(route) for route in routes]

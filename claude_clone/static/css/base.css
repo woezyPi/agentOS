@@ -206,6 +206,7 @@ button:disabled { cursor: default; opacity: .45; }
 .send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent-yellow); color: var(--bg-primary); padding: 11px var(--space-4); font: 600 11px var(--font-code); flex: none; }
 .send.stop { background: var(--error); }
 .send.stop:hover:not(:disabled) { background: var(--warning); }
+.send.steer { background: var(--accent-yellow); }
 
 /* Rich text and syntax: technical colours are muted, separate from brand accents. */
 .md { white-space: normal; overflow-wrap: anywhere; }

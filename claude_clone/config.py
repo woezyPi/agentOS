@@ -67,12 +67,18 @@ def thinking_for(role: str, first_step: bool = False, challenge: bool = False) -
 MAX_RETRIES = 3            # réponses LLM invalides consécutives avant abandon
 MAX_STEPS_PER_TURN = int(os.getenv("CC_MAX_STEPS", "0"))  # 0 = AUCUNE limite (défaut). N > 0 : point d'étape après N tours d'outils
 RECURSION_LIMIT = int(os.getenv("CC_RECURSION_LIMIT", "1000"))  # garde-fou anti boucle infinie uniquement (pas une limite de travail)       # garde-fou LangGraph contre les boucles infinies
+MAX_TOOL_CALLS_PER_MESSAGE = int(os.getenv("CC_MAX_TOOL_CALLS_PER_MESSAGE", "8"))
+MAX_SUBAGENT_TOOL_CALLS = int(os.getenv("CC_MAX_SUBAGENT_TOOL_CALLS", "24"))
+MAX_SUBAGENT_TOKENS = int(os.getenv("CC_MAX_SUBAGENT_TOKENS", "40000"))
+MAX_SUBAGENT_ERRORS = int(os.getenv("CC_MAX_SUBAGENT_ERRORS", "3"))
 BASH_DEFAULT_TIMEOUT = 60  # secondes
 BASH_MAX_TIMEOUT = 600
 MAX_OUTPUT_CHARS = 20_000  # troncature des sorties renvoyées au LLM
 MAX_READ_BYTES = 200_000
 CONTEXT_COMPACT_TOKENS = 80_000  # au-delà (estimation), l'historique ancien est résumé
 CONTEXT_KEEP_TOKENS = 20_000     # taille approximative de la fin de conversation conservée telle quelle
+MAX_SUMMARY_DEPTH = int(os.getenv("CC_MAX_SUMMARY_DEPTH", "3"))
+MAX_SUMMARY_CHARS = int(os.getenv("CC_MAX_SUMMARY_CHARS", "12000"))
 
 # --- Lecture des secrets ------------------------------------------------------
 # On ne lit QUE ces noms, jamais tout le fichier, et on ne les exporte pas dans

@@ -62,6 +62,7 @@ let roleTitles={coder:'AGENT CODEUR'};
 const label=k=>(roleTitles[k]||String(k||'AGENT')).toUpperCase();
 
 let ctxInfo=null,supModel='',busy=false,controller=null,raf=0,runStart=0,lastEvent=0;
+function paintSendControl(){const steering=busy&&!!prompt.value.trim();sendBtn.replaceChildren(document.createTextNode(steering?'PILOTER':busy?'STOP':'ENVOYER'),icon(steering?'send':busy?'stop':'send'));sendBtn.classList.toggle('stop',busy&&!steering);sendBtn.classList.toggle('steer',steering)}
 function tickText(){if(!busy||!runStart)return '';const t=Math.floor((Date.now()-runStart)/1000),q=Math.floor((Date.now()-lastEvent)/1000);return t+' s'+(q>=6&&t-q>=2?' · '+q+' s sans signal':'')}
 let liveM=null;let firstOutputMs=null;
 function progress(m){if(!m||!m.blocks)return null;const t=Math.floor((Date.now()-runStart)/1000),parts=[];let pct=null;
@@ -341,6 +342,17 @@ function agentCard(b){
   head.classList.add('ac-head');head.onclick=e=>{if(e.target.closest('a,.fp,button'))return;openAgentInspector(b)};
   return card;
 }
+const TOOL_GROUP_MIN=4;
+function toolLabel(name){return name==='execute_bash'?'BASH':name==='read_file'?'LECTURE':String(name||'OUTIL').toUpperCase()}
+function aggregateToolBlocks(blocks){
+  const out=[];let run=[];
+  const flush=()=>{if(run.length>=TOOL_GROUP_MIN)out.push({t:'tool-group',items:run,key:run.map(x=>x.id||x.name).join('|')});else out.push(...run);run=[]};
+  for(const block of blocks){
+    if(block.t==='tool'&&!block.agent&&block.status==='ok'&&!block.denied)run.push(block);
+    else{flush();out.push(block)}
+  }
+  flush();return out;
+}
 function renderBlock(b,m){
   if(b.t==='text'){
     const flat=String(b.text||'').replace(/```[\s\S]*?```/g,' [code] ').replace(/[*`]|^#+\s*|\]\([^)]*\)/gm,'').replace(/\[/g,'').replace(/\s+/g,' ').trim();
@@ -356,12 +368,22 @@ function renderBlock(b,m){
     if(/^Budget d.étapes atteint/.test(b.text)){const go=el('button','choice','CONTINUER ↗');go.type='button';go.style.marginLeft='12px';go.disabled=busy;go.title='Reprend avec un nouveau budget d’étapes';go.onclick=()=>{if(!busy){prompt.value='continue';submit()}};n.append(go)}
     return n}
   if(b.t==='plan'){const d=el('div','plan');d.append(el('div','small-label','PLAN'));for(const t of b.todos){const r=el('div',t.status==='completed'?'done':t.status==='in_progress'?'doing':'todo',(t.status==='completed'?'✔ ':t.status==='in_progress'?'▶ ':'○ ')+t.content);d.append(r)}return d}
+  if(b.t==='tool-group'){
+    const counts=new Map(),total=b.items.reduce((sum,x)=>sum+(x.end&&x.start?x.end-x.start:0),0);
+    for(const item of b.items){const name=toolLabel(item.name);counts.set(name,(counts.get(name)||0)+1)}
+    const d=el('details','tool-group');d.dataset.viewKey='tool-group-'+b.key;d.open=!!b.items[0].groupOpen;
+    d.ontoggle=()=>{b.items[0].groupOpen=d.open};
+    const s=el('summary'),title=el('span','tool-group-title',b.items.length+' OUTILS TERMINÉS'),breakdown=el('span','tool-group-breakdown',[...counts].map(([name,n])=>name+' × '+n).join(' · '));
+    s.append(el('span','tool-group-caret',d.open?'▾':'▸'),title,breakdown);if(total)s.append(el('span','tool-dur',fmtDur(total)));
+    d.addEventListener('toggle',()=>{const caret=d.querySelector('.tool-group-caret');if(caret)caret.textContent=d.open?'▾':'▸'});
+    const body=el('div','tool-group-body');for(const item of b.items)body.append(renderBlock(item,m));d.append(s,body);return d;
+  }
   if(b.t==='tool'){
     const run=b.status==='run';
     if(b.agent)return agentCard(b);
     const d=el('details','tool '+(b.status==='error'?'err':b.status==='ok'?'ok':'')+(b.denied?' denied':'')+(b.name==='execute_bash'?' bash':'')+(b.name==='read_file'?' read':''));d.open=!!b.open;d.ontoggle=()=>{b.open=d.open};
     const s=el('summary');
-    const badge=b.name==='execute_bash'?'BASH':b.name==='read_file'?'LECTURE':b.name.toUpperCase();
+    const badge=toolLabel(b.name);
     const status=run?'EN COURS':b.denied?'REFUSÉ':b.status==='error'?'ÉCHEC':'TERMINÉ';
     const dur=b.end?el('span','tool-dur',fmtDur(b.end-b.start)):null;
     s.append(el('span','tool-badge',badge),el('span','tool-status',status),dur);
@@ -538,7 +560,7 @@ function renderMessage(m){
   const art=el('article','message '+(m.role==='user'?'user':'agent'));if(m.id)art.dataset.mid=m.id;
   const rl=el('div','message-role',m.role==='user'?'TOI':(m.agent||'SUPERVISEUR').toUpperCase());if(m._old){art.classList.add('compacted');rl.append(el('small','','dans le résumé'))}if(m.role!=='user'&&(m.model||supModel))rl.append(el('small','',modelDisplay(m.model||supModel)));art.append(rl);
   const content=el('div');const body=el('div','message-content');
-  if(m.role==='user'||!m.blocks){body.textContent=m.text||'';if(m.files?.length){const row=el('div','msg-files');for(const f of m.files){const chip=el('span','att-chip');chip.append(el('span','','📎 '+f.name),el('small','',fmtSize(f.size)));row.append(chip)}body.append(row)}}else{const agents=m.blocks.filter(b=>b.t==='tool'&&b.agent);if(agents.length){body.append(agentOverview(m,agents));if(!agents.some(a=>agentVisible(a,m)))body.append(el('p','agents-empty','Aucun agent dans cette catégorie.'))}let grid=null;for(const b of m.blocks){const isAg=b.t==='tool'&&b.agent;if(isAg&&!agentVisible(b,m))continue;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');grid.dataset.viewKey='agents-'+b.id;body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));const st=el('div','status-stats'),bar=el('div','status-bar');sl.dataset.viewKey='progress';const currentProgress=progress(m),visible=!!(currentProgress&&currentProgress.pct!==null),fill=document.createElement('i');bar.hidden=!visible;fill.style.width=(visible?currentProgress.pct:0)+'%';bar.append(fill);st.textContent=currentProgress?currentProgress.text:'';sl.append(bar,st);body.append(sl)}}
+  if(m.role==='user'||!m.blocks){body.textContent=m.text||'';if(m.files?.length){const row=el('div','msg-files');for(const f of m.files){const chip=el('span','att-chip');chip.append(el('span','','📎 '+f.name),el('small','',fmtSize(f.size)));row.append(chip)}body.append(row)}}else{const agents=m.blocks.filter(b=>b.t==='tool'&&b.agent);if(agents.length){body.append(agentOverview(m,agents));if(!agents.some(a=>agentVisible(a,m)))body.append(el('p','agents-empty','Aucun agent dans cette catégorie.'))}let grid=null;for(const b of aggregateToolBlocks(m.blocks)){const isAg=b.t==='tool'&&b.agent;if(isAg&&!agentVisible(b,m))continue;const n=renderBlock(b,m);if(isAg){if(!grid){grid=el('div','agent-grid');grid.dataset.viewKey='agents-'+b.id;body.append(grid)}grid.append(n)}else{grid=null;body.append(n)}}if(m.status){const sl=el('div','status-line'),mo=walker();sl.append(mo,el('span','status-phase',phaseOf(m)),el('span','status-time',tickText()));const st=el('div','status-stats'),bar=el('div','status-bar');sl.dataset.viewKey='progress';const currentProgress=progress(m),visible=!!(currentProgress&&currentProgress.pct!==null),fill=document.createElement('i');bar.hidden=!visible;fill.style.width=(visible?currentProgress.pct:0)+'%';bar.append(fill);st.textContent=currentProgress?currentProgress.text:'';sl.append(bar,st);body.append(sl)}}
   content.append(body);
   if(m.role!=='user'&&m.blocks){const cv=current(),live=busy&&cv&&cv.messages[cv.messages.length-1]===m,w=whoLine(m,live);if(w){if(live)content.prepend(w);else content.append(w)}}
   if(m.role!=='user'&&m.usage)content.append(el('div','usage',m.usage));
@@ -557,7 +579,7 @@ function render(){
   {let u=0;for(const x of (c?c.messages:[])){if(x.role==='user')u++;x._old=u>0&&u<=oldTurns}}
   feed.replaceChildren();
   document.querySelector('.content').classList.toggle('wide',!!c&&c.messages.some(m=>m.blocks&&m.blocks.filter(b=>b.t==='tool'&&b.agent).length>=2));
-  sendBtn.replaceChildren(document.createTextNode(busy?'STOP':'ENVOYER'),icon(busy?'stop':'send'));sendBtn.classList.toggle('stop',busy);
+  paintSendControl();
   if(!c||c.messages.length===0){
     feed.innerHTML=`<div class="empty"><div class="empty-kicker">/ TON ESPACE DE TRAVAIL</div><h1>Des idées.<br><em>Du concret.</em></h1><p>Écris ta demande, choisis un agent si besoin. Une interface brute, conçue pour penser et produire sans se perdre dans les menus.</p><div class="suggestions"><button class="suggestion" data-agent="architect" data-prompt="Conçois l’architecture de mon système multi-agents."><span>Concevoir une architecture</span><small>01 / RÉFLEXION ↗</small></button><button class="suggestion" data-agent="reviewer" data-prompt="Relis mon code et détecte les problèmes critiques."><span>Faire une review de code</span><small>02 / REVIEWER ↗</small></button><button class="suggestion" data-agent="developer" data-prompt="Crée un endpoint FastAPI pour exécuter une mission."><span>Écrire un endpoint API</span><small>03 / CODEUR ↗</small></button><button class="suggestion" data-agent="auto" data-prompt="Décompose mon objectif en tâches prioritaires."><span>Préparer un plan d’action</span><small>04 / ROUTEUR ↗</small></button></div></div>`;
     feed.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{prompt.value=b.dataset.prompt;fitPrompt();agent.value=b.dataset.agent;savePrefs();prompt.focus()}));return}
@@ -641,6 +663,7 @@ function handle(ev,m){
       if(b.steps.length>80)b.steps.splice(0,b.steps.length-80);m.status=label(b.agent)+(b.model?' · '+b.model:'')+(b.panel?' · PANEL':'')+' au travail… ('+b.steps.filter(x=>x.k==='tool').length+' outils)'}break;
     case 'plan':{const i=m.blocks.findIndex(x=>x.t==='plan');const b={t:'plan',todos:ev.todos};if(i>=0)m.blocks[i]=b;else m.blocks.push(b)}break;
     case 'notice':m.blocks.push({t:'notice',level:ev.level,text:ev.text});if(/^Contexte compacté/.test(ev.text||''))refreshCtx(true);break;
+    case 'steered':m.blocks.push({t:'notice',level:'info',text:'↳ PILOTAGE APPLIQUÉ : '+ev.text});m.status='Réorientation…';break;
     case 'auto':if(ev.preview){closeText(m);m.blocks.push({t:'approval',calls:[{id:ev.id||('auto-'+Date.now()),name:ev.name,summary:ev.summary,preview:ev.preview}],choices:{},resolved:true,auto:true,decided:{}})}else m.blocks.push({t:'notice',level:'info',text:'⚡ auto : '+ev.name+'('+ev.summary+') — '+ev.why});break;
     case 'approval':closeText(m);m.blocks.push({t:'approval',calls:ev.calls,choices:{},resolved:false});break;
     case 'done':if(ev.supervisor_model)m.model=ev.supervisor_model;m.usage=(ev.usage||'')+((ev.models||[]).length?' · modèles : '+ev.models.join(' · '):'');m.status='';if(ev.context)paintCtx(ev.context);break;
@@ -660,12 +683,18 @@ async function run(endpoint,payload,m){
 }
 function body(c,extra){return {thread_id:c.id,agent:agent.value,mode:modeSel.value,delegation:deleg.value,auto:autoBox.checked,...extra}}
 function submit(){
-  if(busy){controller?.abort();return}
+  if(busy){const steer=prompt.value.trim();if(steer){sendSteer(steer)}else controller?.abort();return}
   const files=attached.slice(),value=prompt.value.trim()||(files.length?'Analyse les pièces jointes.':'');if(!value)return;let c=current();if(!c){start();c=current()}
   if(c.messages.length===0)c.title=value.replace(/\s+/g,' ').slice(0,45)+(value.length>45?'…':'');
   c.messages.push({id:makeId(),role:'user',text:value,...(files.length?{files:files.map(f=>({name:f.name,size:f.text.length}))}:{})});attached.length=0;renderAttached();
   const m={id:makeId(),role:'assistant',model:modelDisplay(configuredModel()),agent:agent.value==='auto'?'Superviseur':label(agent.value),blocks:[],status:'Réflexion…'};c.messages.push(m);
   prompt.value='';fitPrompt();stickNext=true;save();run('/api/chat',body(c,{message:value,attachments:files.map(f=>({name:f.name,text:f.text}))}),m);
+}
+async function sendSteer(message){
+  const c=current(),m=liveM;if(!c||!m||!message)return;
+  prompt.value='';fitPrompt();m.blocks.push({t:'notice',level:'info',text:'↳ PILOTAGE EN ATTENTE : '+message});m.status='Consigne de pilotage envoyée…';schedule();
+  try{const r=await api('/api/steer',{method:'POST',body:JSON.stringify({thread_id:c.id,message})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:'Erreur '+r.status)}
+  catch(e){m.blocks.push({t:'notice',level:'warn',text:'Pilotage non appliqué : '+e.message});schedule()}
 }
 function resume(m,b){
   if(busy)return;const c=current();b.resolved=true;b.decided={...b.choices};save();
@@ -936,7 +965,7 @@ async function init(){
 }
 $('chatForm').addEventListener('submit',e=>{e.preventDefault();submit()});
 prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submit()}});
-prompt.addEventListener('input',fitPrompt);
+prompt.addEventListener('input',()=>{fitPrompt();paintSendControl()});
 // Pièces jointes texte/code : lues dans le navigateur, envoyées avec le message ; le serveur les balise comme données non fiables.
 const attached=[],ATT_MAX=5,ATT_FILE=100000,ATT_TOTAL=150000;
 function fmtSize(n){return n>=1000?Math.round(n/1000)+' k':n+' car.'}

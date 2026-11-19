@@ -109,6 +109,11 @@ class ChatIn(BaseModel):
     auto: bool = False
 
 
+class SteerIn(BaseModel):
+    thread_id: str = Field(pattern=THREAD_ID)
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
 class SkillIn(BaseModel):
     description: str = Field(min_length=1, max_length=400)
     tools: list[str] = Field(default_factory=list, max_length=10)
@@ -328,6 +333,7 @@ class Runtime:
         self.rebuild = None  # callable(settings) → graphe ; défini au démarrage réel (pas dans les tests à graphe injecté)
         self.busy: dict[str, float] = {}
         self.allow: dict[str, set] = {}
+        self.steers: dict[str, list[str]] = {}
 
     def reload(self) -> None:
         """Relit la config (modèles choisis dans l'interface) et reconstruit le graphe ; les tours en cours gardent l'ancien."""
@@ -390,6 +396,7 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
                 decisions = None
             # (2) exécution
             streamed, announced, last_calls = False, set(), []
+            steer = None
             async for kind, data in graph.astream(inputs, cfg, stream_mode=["updates", "messages", "custom"]):
                 if kind == "custom":
                     if isinstance(data, dict) and data.get("type") in ("agent_step", "agent_start", "agent_done"):
@@ -424,6 +431,18 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
                     if node == "supervisor":
                         streamed = False
                     announced.discard(node)
+                queued = rt.steers.get(tid)
+                if queued:
+                    steer = "\n".join(queued)
+                    rt.steers.pop(tid, None)
+                    break
+            if steer:
+                await repair_dangling_tool_calls(graph, cfg)
+                inputs = {"messages": [HumanMessage(
+                    "[Instruction de pilotage de l'utilisateur, prioritaire sur la demande en cours]\n" + steer
+                )], "retries": 0}
+                yield enc({"type": "steered", "text": steer})
+                continue
             inputs = None
             cfg["configurable"].pop("denied_call_ids", None)
             cfg["configurable"].pop("offline_call_ids", None)
@@ -447,6 +466,7 @@ async def advance(rt: Runtime, tid: str, inputs, *, auto: bool, mode: str, agent
         yield enc({"type": "error", "text": f"{type(exc).__name__}: {exc}"})
     finally:
         rt.busy.pop(tid, None)
+        rt.steers.pop(tid, None)
 
 
 def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> FastAPI:
@@ -490,6 +510,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             raise HTTPException(401, "Jeton invalide ou absent")
 
     app = FastAPI(title="claude-clone", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.runtime = rt
     @app.exception_handler(RequestValidationError)
     async def redact_gateway_validation(request: Request, exc: RequestValidationError):
         if request.url.path == "/api/gateway":
@@ -522,7 +543,7 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             raise HTTPException(500, "Interface introuvable")
         return HTMLResponse(html, headers={**nostore, "Content-Security-Policy": CSP, "X-Frame-Options": "DENY"})
 
-    tool_objs = {t.name: t for t in (*[T.LOCAL_TOOLS_BY_NAME[n] for n in ("read_file", "grep", "glob")], AT.git_diff, WEB.fetch_url, WEB.latest_version,
+    tool_objs = {t.name: t for t in (*[T.LOCAL_TOOLS_BY_NAME[n] for n in ("read_file", "grep", "glob")], AT.git_diff, WEB.web_search, WEB.fetch_url, WEB.latest_version,
                                      AT.sql_describe, AT.sql_query, AT.run_check)}
 
     def model_metadata():
@@ -561,6 +582,16 @@ def create_app(*, token: str, hosts: set[str], graph=None, settings=None) -> Fas
             raise HTTPException(409, "Un tour est déjà en cours pour cette conversation")
         inputs = {"messages": [HumanMessage(message)], "retries": 0, "steps": 0}
         return stream(advance(rt, body.thread_id, inputs, auto=body.auto, mode=body.mode, agent=body.agent, delegation=body.delegation))
+
+    @app.post("/api/steer", **api)
+    async def steer(body: SteerIn):
+        if body.thread_id not in rt.busy:
+            raise HTTPException(409, "Aucun tour en cours à piloter")
+        queue = rt.steers.setdefault(body.thread_id, [])
+        if len(queue) >= 5:
+            raise HTTPException(429, "Trop de consignes de pilotage en attente")
+        queue.append(body.message.strip())
+        return JSONResponse({"ok": True, "queued": len(queue)}, headers=nostore)
 
     @app.post("/api/resume", **api)
     async def resume(body: ResumeIn):
