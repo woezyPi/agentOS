@@ -75,7 +75,7 @@ CSP = ("default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 
        "font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
-MAX_ATTACHMENTS, MAX_ATTACHMENT_CHARS, MAX_ATTACHMENTS_TOTAL = 5, 100_000, 150_000  # ~40 k tokens au plus pour tout le message
+MAX_ATTACHMENTS, MAX_ATTACHMENT_CHARS, MAX_ATTACHMENTS_TOTAL = 5, 300_000, 150_000  # ~40 k tokens au plus pour tout le message
 
 
 class AttachmentIn(BaseModel):
